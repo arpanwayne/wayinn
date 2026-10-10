@@ -44,6 +44,8 @@ Demo logins (password `Wayinn@123`):
 
 Tests (end-to-end against a real database, after migrate + seed): `cd backend && npm test`
 
+> ⚠️ Run tests and `demo-data` only against a local/dev database — they create test hotels and reset the demo hotel's live stays. Never point them at production.
+
 ## How the important parts work
 
 - **Multi-tenant**: every table carries `hotel_id`; the hotel is derived from the logged-in user on every request, never from the client. Suspended/cancelled subscriptions get HTTP 402.
