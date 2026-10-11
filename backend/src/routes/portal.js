@@ -19,6 +19,9 @@ const r = Router();
 const verifyLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many attempts. Please contact reception.' } });
 const publicLimiter = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
+const orderLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many orders in a short time. Please call reception.' } });
+const MAX_OPEN_ORDERS = 5; // per stay, not yet delivered
 
 async function roomByToken(token) {
   if (!/^[a-f0-9]{32}$/.test(token)) throw notFound('Invalid QR code');
@@ -103,6 +106,16 @@ r.post('/portal/:token/requests', publicLimiter, async (req, res) => {
   res.status(201).json(row);
 });
 
+// Food order with just the room QR. Allowed only while a guest is checked in to this room, so an
+// empty room's QR (or an old photo of it) cannot order. No PIN: the guest only scans and orders.
+r.post('/portal/:token/orders', orderLimiter, async (req, res) => {
+  const b = parse(guestOrderBody, req.body);
+  const room = await roomByToken(req.params.token);
+  const stay = await activeStay(room.id);
+  if (!stay) throw conflict('This room has no active stay. Please contact reception.');
+  res.status(201).json(await placeGuestOrder(req, stay, b));
+});
+
 // ----- Verified guest endpoints -----
 r.get('/guest/me', requireGuest, async (req, res) => {
   const s = req.stay;
@@ -131,19 +144,26 @@ r.get('/guest/orders', requireGuest, async (req, res) => {
        FROM orders o WHERE o.stay_id = $1 ORDER BY o.id DESC`, [req.stay.id]));
 });
 
-r.post('/guest/orders', requireGuest, async (req, res) => {
-  const b = parse(z.object({ items: z.array(orderItemInput).min(1).max(30), notes: z.string().max(300).optional().nullable() }), req.body);
-  const hotel = await one('SELECT * FROM hotels WHERE id = $1', [req.stay.hotel_id]);
-  const pending = await one(`SELECT count(*)::int AS n FROM orders WHERE stay_id = $1 AND status = 'received'`, [req.stay.id]);
-  if (pending.n >= 3) throw conflict('You have orders waiting for confirmation. Please wait or call reception.');
+const guestOrderBody = z.object({ items: z.array(orderItemInput).min(1).max(30), notes: z.string().max(300).optional().nullable() });
+
+/** Place a room-service order for a checked-in stay: goes to the kitchen and onto the room bill. */
+async function placeGuestOrder(req, stay, b) {
+  const hotel = await one('SELECT * FROM hotels WHERE id = $1', [stay.hotel_id]);
+  const open = await one(`SELECT count(*)::int AS n FROM orders WHERE stay_id = $1 AND status NOT IN ('delivered','cancelled')`, [stay.id]);
+  if (open.n >= MAX_OPEN_ORDERS) throw conflict('You already have orders on the way. Please wait for them or call reception.');
   const order = await tx(async (db) => {
     const o = await createOrder(db, {
-      hotel, source: 'guest_qr', input: { order_type: 'room_service', room_id: req.stay.room_id, notes: b.notes, items: b.items },
+      hotel, source: 'guest_qr', input: { order_type: 'room_service', room_id: stay.room_id, notes: b.notes, items: b.items },
     });
-    await audit({ hotelId: hotel.id, auth: { type: 'guest' }, ip: req.ip }, 'order.created_by_guest', 'order', o.id, { order_no: o.order_no, total_paise: o.total_paise }, db);
+    await audit({ hotelId: hotel.id, auth: { type: 'guest' }, ip: req.ip }, 'order.created_by_guest', 'order', o.id,
+      { order_no: o.order_no, total_paise: o.total_paise, posted_to_room: o.settlement === 'room_posted' }, db);
     return o;
   });
-  res.status(201).json({ id: order.id, order_no: order.order_no, status: order.status, total_paise: order.total_paise });
+  return { id: order.id, order_no: order.order_no, status: order.status, total_paise: order.total_paise };
+}
+
+r.post('/guest/orders', requireGuest, async (req, res) => {
+  res.status(201).json(await placeGuestOrder(req, req.stay, parse(guestOrderBody, req.body)));
 });
 
 r.get('/guest/requests', requireGuest, async (req, res) => {

@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { rupees, fmtDate, fmtDateLong, ago } from '../lib/format.js';
-import { PageHeader, Stat, Badge, Empty, Loading, useAction } from '../components/ui.jsx';
+import { PageHeader, Stat, Badge, Empty, Loading, ReasonDialog, useAction, useToast } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
 
 function Section({ title, count, children, action }) {
@@ -25,6 +25,20 @@ export default function FrontDesk() {
   const alerts = useApi('/alerts', { interval: 60000 });
   const requests = useApi(can('requests.view') ? '/requests' : null, { interval: 30000, skip: !can('requests.view') });
   const handover = useApi('/hotel/handover');
+  // Room orders are for information: they are already with the kitchen and on the room bill.
+  const orders = useApi(can('pos.order') ? '/orders?active=1' : null, { interval: 15000, skip: !can('pos.order') });
+  const toast = useToast();
+  const seenOrders = useRef(null);
+  const [cancelOrder, setCancelOrder] = useState(null);
+  useEffect(() => {
+    if (!orders.data) return;
+    const ids = new Set(orders.data.map((o) => o.id));
+    if (seenOrders.current) {
+      orders.data.filter((o) => o.source === 'guest_qr' && !seenOrders.current.has(o.id))
+        .forEach((o) => toast(`Room ${o.room_number} ordered food (${o.order_no}) — sent to kitchen, added to room bill`));
+    }
+    seenOrders.current = ids;
+  }, [orders.data, toast]);
   const [checkIn, setCheckIn] = useState(null);
   const [checkOut, setCheckOut] = useState(null);
   const [note, setNote] = useState('');
@@ -33,6 +47,7 @@ export default function FrontDesk() {
   if (!data) return <Loading />;
   const c = data.counts;
   const openReq = (requests.data || []).filter((r) => r.status !== 'done' && r.status !== 'cancelled');
+  const roomOrders = (orders.data || []).filter((o) => o.order_type === 'room_service' && !['delivered', 'cancelled'].includes(o.status));
   return (
     <div className="space-y-5">
       <PageHeader title="Front desk" subtitle={fmtDateLong(data.today)}
@@ -124,6 +139,22 @@ export default function FrontDesk() {
               </tbody></table>
             </Section>
           )}
+          {can('pos.order') && (
+            <Section title="Room food orders" count={roomOrders.length} action={<Link to="/pos" className="text-xs font-semibold text-brand-700">All orders</Link>}>
+              {!roomOrders.length ? <Empty>No room orders in progress</Empty> : (
+                <table className="table"><tbody>
+                  {roomOrders.map((o) => (
+                    <tr key={o.id}>
+                      <td className="w-16 font-semibold">{o.room_number}</td>
+                      <td>{o.items?.filter((i) => !i.cancelled).map((i) => `${i.quantity}× ${i.name}`).join(', ')}
+                        <div className="text-xs text-ink-500">{o.order_no} · {ago(o.created_at)} · {rupees(o.total_paise)} · {o.status === 'received' ? 'waiting for acceptance' : o.settlement === 'room_posted' ? 'in kitchen, on room bill' : 'in kitchen, not billed yet'}</div></td>
+                      <td className="text-right">{can('pos.cancel') && <button className="btn-ghost btn-sm text-red-600" onClick={() => setCancelOrder(o)}>Cancel</button>}</td>
+                    </tr>
+                  ))}
+                </tbody></table>
+              )}
+            </Section>
+          )}
           {can('requests.view') && (
             <Section title="Guest requests" count={openReq.length} action={<Link to="/requests" className="text-xs font-semibold text-brand-700">All</Link>}>
               {!openReq.length ? <Empty>No open requests</Empty> : (
@@ -153,6 +184,9 @@ export default function FrontDesk() {
         </div>
       </div>
       <CheckInDialog stay={checkIn} open={!!checkIn} onClose={() => { setCheckIn(null); reload(); }} onDone={reload} />
+      <ReasonDialog open={!!cancelOrder} title={`Cancel ${cancelOrder?.order_no} · Room ${cancelOrder?.room_number}`} confirmLabel="Cancel order" onClose={() => setCancelOrder(null)}
+        extra={<p className="mb-3 text-sm text-ink-500">The kitchen is told to stop and the charge is taken off the room bill.</p>}
+        onSubmit={(reason) => run(async () => { await api.post(`/orders/${cancelOrder.id}/cancel`, { reason }); setCancelOrder(null); orders.reload(); }, 'Order cancelled and removed from the room bill')} />
       <CheckOutDialog stay={checkOut} open={!!checkOut} onClose={() => setCheckOut(null)} onDone={reload} />
     </div>
   );

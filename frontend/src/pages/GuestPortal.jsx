@@ -22,6 +22,7 @@ export default function GuestPortal() {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState('');
+  const [placed, setPlaced] = useState([]); // orders sent from this device in this visit
 
   useEffect(() => { api.get(`/portal/${token}`, { scope: 'none' }).then(setInfo).catch((e) => setErr(e.message)); }, [token]);
   const loadMine = useCallback(async () => {
@@ -45,13 +46,15 @@ export default function GuestPortal() {
     const message = type === 'maintenance' || type === 'amenity' ? prompt('Tell us a little more (optional)') : null;
     try { await api.post(`/portal/${token}/requests`, { type, message }, { scope: 'none' }); flash('Request sent — our team will be with you shortly.'); } catch (e) { flash(e.message); }
   };
+  // Ordering needs only the room QR (the room must have a checked-in guest). The bill and order history stay behind the PIN.
   const placeOrder = async () => {
-    if (!authed) return setVerifyOpen(true);
     setBusy(true);
     try {
-      const r = await api.post('/guest/orders', { items: cart.map(({ menu_item_id, variant, quantity }) => ({ menu_item_id, variant, quantity })), notes: notes || null }, { scope: 'guest' });
+      const body = { items: cart.map(({ menu_item_id, variant, quantity }) => ({ menu_item_id, variant, quantity })), notes: notes || null };
+      const r = await api.post(`/portal/${token}/orders`, body, { scope: 'none' });
+      setPlaced((p) => [{ ...r, items: cart.map((c) => `${c.quantity}× ${c.name}`).join(', '), at: new Date().toISOString() }, ...p]);
       setCart([]); setNotes(''); setTab('orders'); loadMine();
-      flash(r.status === 'received' ? `Order ${r.order_no} sent — waiting for the kitchen to confirm` : `Order ${r.order_no} confirmed`);
+      flash(r.status === 'received' ? `Order ${r.order_no} sent — waiting for the hotel to confirm` : `Order ${r.order_no} sent to the kitchen`);
     } catch (e) { flash(e.message); } finally { setBusy(false); }
   };
 
@@ -71,7 +74,7 @@ export default function GuestPortal() {
       <header className="bg-brand-900 px-5 pb-6 pt-8 text-white">
         <div className="text-xs uppercase tracking-widest text-brand-200">{info.hotel.name}</div>
         <div className="mt-1 text-2xl font-extrabold">Room {info.room.number}</div>
-        <div className="mt-1 text-sm text-brand-200">{me ? `Hi ${me.guest_name.split(' ')[0]} · checkout ${fmtDate(me.check_out)} by ${me.checkout_time?.slice(0, 5)}` : info.occupied ? 'Order food, request service or view your bill' : 'This room has no active stay'}</div>
+        <div className="mt-1 text-sm text-brand-200">{me ? `Hi ${me.guest_name.split(' ')[0]} · checkout ${fmtDate(me.check_out)} by ${me.checkout_time?.slice(0, 5)}` : info.occupied ? 'Order food to your room, request service or view your bill' : 'This room has no active stay'}</div>
       </header>
       <nav className="sticky top-0 z-10 grid grid-cols-4 border-b border-ink-100 bg-white text-sm font-semibold">
         {[['menu', 'Menu'], ['requests', 'Requests'], ['orders', 'Orders'], ['bill', 'My stay']].map(([k, l]) => (
@@ -94,6 +97,7 @@ export default function GuestPortal() {
                     <div className="flex items-center gap-1.5 font-semibold">{i.is_veg !== null && <span className={`h-2.5 w-2.5 rounded-sm border-2 ${i.is_veg ? 'border-green-600' : 'border-red-600'}`} />}{i.name}</div>
                     {i.description && <div className="text-xs text-ink-500">{i.description}</div>}
                     {!i.variants.length && <div className="mt-1 text-sm">{rupees0(i.price_paise)}</div>}
+                    {i.variants.length > 0 && !(i.available && info.occupied) && <div className="mt-1 text-sm">{i.variants.map((v) => `${v.name} ${rupees0(v.price_paise)}`).join(' · ')}</div>}
                   </div>
                   {i.available && info.occupied && !i.variants.length && <button className="btn-secondary btn-sm" onClick={() => add(i)}>Add</button>}
                   {!i.available && <span className="text-xs text-ink-400">Unavailable</span>}
@@ -120,7 +124,16 @@ export default function GuestPortal() {
 
       {tab === 'orders' && (
         <div className="space-y-2 p-4">
-          {!authed ? <VerifyPrompt onClick={() => setVerifyOpen(true)} /> : !orders.length ? <div className="py-10 text-center text-sm text-ink-400">No orders yet</div> : orders.map((o) => (
+          {!authed ? <>
+            {placed.map((o) => (
+              <div key={o.id} className="card p-3">
+                <div className="flex justify-between"><span className="font-semibold">{o.order_no}</span><span className="badge bg-brand-50 text-brand-700">{o.status === 'received' ? 'Waiting' : 'Sent to kitchen'}</span></div>
+                <div className="text-sm text-ink-600">{o.items}</div>
+                <div className="mt-1 flex justify-between text-xs text-ink-400"><span>{ago(o.at)}</span><span>{rupees(o.total_paise)} · on your room bill</span></div>
+              </div>
+            ))}
+            <VerifyPrompt onClick={() => setVerifyOpen(true)} text="To see all your orders and their status, please confirm your stay." />
+          </> : !orders.length ? <div className="py-10 text-center text-sm text-ink-400">No orders yet</div> : orders.map((o) => (
             <div key={o.id} className="card p-3">
               <div className="flex justify-between"><span className="font-semibold">{o.order_no}</span><span className="badge bg-brand-50 text-brand-700">{label(o.status)}</span></div>
               <div className="text-sm text-ink-600">{o.items?.map((i) => `${i.quantity}× ${i.name}`).join(', ')}</div>
@@ -188,10 +201,10 @@ export default function GuestPortal() {
   );
 }
 
-function VerifyPrompt({ onClick }) {
+function VerifyPrompt({ onClick, text = 'To protect your privacy, please confirm your stay first.' }) {
   return (
     <div className="card p-6 text-center">
-      <div className="text-sm text-ink-600">To protect your privacy, please confirm your stay first.</div>
+      <div className="text-sm text-ink-600">{text}</div>
       <button className="btn-primary mt-3" onClick={onClick}>Verify my stay</button>
     </div>
   );

@@ -38,9 +38,8 @@ Demo logins (password `Wayinn@123`):
 |---|---|
 | Super admin (`/platform`) | admin@wayinn.app |
 | Owner | owner@demo-hotel.in |
-| Manager / Reception / Cashier | manager@ / reception@ / cashier@demo-hotel.in |
-| Restaurant / Kitchen | restaurant@ / kitchen@demo-hotel.in |
-| Housekeeping / Maintenance | hk@ / maintenance@demo-hotel.in |
+| Front desk (reception, billing, POS, housekeeping, maintenance) | frontdesk@demo-hotel.in |
+| Kitchen | kitchen@demo-hotel.in |
 
 Tests (end-to-end against a real database, after migrate + seed): `cd backend && npm test`
 
@@ -53,8 +52,9 @@ Tests (end-to-end against a real database, after migrate + seed): `cd backend &&
 - **Money** is stored as integer paise. Financial records are append-only: discounts are negative lines, voids/refunds are flagged with who/why — nothing is silently overwritten. Every sensitive action writes to `audit_logs`.
 - **Room charges** post per night (on check-in, by the automatic night audit every 30 min, and at checkout), guarded by a unique index so a night can never be charged twice. Early departure voids unused nights.
 - **GST**: room slabs (default ≤ ₹7,500 → 5%, above → 18%), food 5%, services 18% — all configurable per hotel in Setup. Invoices show SAC codes and CGST/SGST or IGST split. Have the hotel's accountant confirm settings.
-- **Guest QR portal**: each room has a secret QR token. Anyone with the QR sees only the menu and can raise service requests while the room is occupied. Ordering to the room and seeing the bill requires the check-in PIN or last 4 digits of the booking phone; the guest session dies at checkout. QR orders wait for staff acceptance by default.
-- **Permissions**: 8 roles with sensible defaults, plus per-person grant/revoke of ~38 permissions (refunds, voids, rate overrides, discounts…).
+- **Guest QR portal**: each room has a secret QR token. Anyone with the QR sees only the menu and can raise service requests while the room is occupied. Food can be ordered with just the QR, but only while a guest is checked in to that room — an empty room's QR cannot order. The order goes straight to the kitchen (ticket prints on its own) and onto the room bill; the front desk only sees a notice. Seeing the bill and order history requires the check-in PIN or last 4 digits of the booking phone; that session dies at checkout. Hotels that want staff to accept QR orders first can switch that on in Setup.
+- **Roles**: three — **Owner** (everything), **Front desk** (reservations, check-in/out, billing, POS, housekeeping, maintenance, guest requests) and **Kitchen** (one screen: incoming tickets and a *Delivered* button). The owner can grant or revoke any of ~38 permissions per person (refunds, voids, rate overrides, discounts are owner-only by default). Give each person their own login so the activity log shows who did what.
+- **Kitchen**: new tickets print automatically (start Chrome with `--kiosk-printing` and the thermal printer as default to skip the print dialog). The kitchen cannot cancel: if an order can't be made they tell the front desk, who cancels the order or removes the item, which also takes the charge off the room bill and shows a *cancelled — stop* notice in the kitchen.
 - **Alerts** (advisory, humans decide): overdue housekeeping, rooms not ready for arrivals, stuck/unbilled orders, missing room charges, overstays, unpaid checkouts, unusual discounts, repeated voids/refunds/cancellations.
 - **Notifications**: booking confirmation / check-in welcome are queued in `notifications_outbox`; nothing is sent until a provider (WhatsApp Cloud API / SMS / email) is wired and enabled per hotel.
 

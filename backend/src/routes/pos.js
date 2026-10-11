@@ -186,7 +186,12 @@ export async function createOrder(db, { hotel, userId = null, source = 'staff', 
     if (!stay && input.order_type === 'room_service') throw conflict('No guest is checked in to this room');
   }
   const priced = await priceItems(db, hotel, input.items, { qr: source === 'guest_qr' });
-  const autoAccept = source === 'staff' || hotel.settings?.qr_orders_require_accept === false;
+  // Guest QR orders go straight to the kitchen unless the hotel has opted in to staff acceptance.
+  const autoAccept = source === 'staff' || hotel.settings?.qr_orders_require_accept !== true;
+  if (source === 'guest_qr') {
+    const folio = await db.one('SELECT status FROM folios WHERE id = $1', [stay.folio_id]);
+    if (folio?.status !== 'open') throw conflict('Your room bill is closed. Please contact reception to order.');
+  }
   const order = await db.one(
     `INSERT INTO orders (hotel_id, order_no, order_type, source, table_label, room_id, stay_id, customer_name, customer_phone, notes, status, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
@@ -194,7 +199,18 @@ export async function createOrder(db, { hotel, userId = null, source = 'staff', 
       input.customer_name || null, input.customer_phone || null, input.notes || null, autoAccept ? 'accepted' : 'received', userId]);
   await insertItems(db, hotel.id, order.id, priced);
   if (autoAccept) await generateKots(db, hotel.id, order.id);
-  return recalcOrder(db, order.id);
+  const out = await recalcOrder(db, order.id);
+  // A guest's own order is charged to the room at once: nobody at the front desk has to do anything,
+  // and it is on the bill at checkout. Cancelling the order (front desk only) takes the charge off again.
+  if (autoAccept && source === 'guest_qr') return postToRoom(db, { hotel, userId }, out, stay);
+  return out;
+}
+
+/** Charge an order to the room bill of a checked-in stay. */
+async function postToRoom(db, ctx, order, stay) {
+  await postOrderLines(db, ctx, order, stay.folio_id);
+  return db.one(`UPDATE orders SET settlement = 'room_posted', folio_id = $1, stay_id = $2, room_id = $3 WHERE id = $4 RETURNING *`,
+    [stay.folio_id, stay.id, stay.room_id, order.id]);
 }
 
 async function loadOrder(db, hotelId, id) {
@@ -282,8 +298,15 @@ r.patch('/orders/:id/status', requirePerm('pos.order', 'kitchen.view'), async (r
     if (b.status === 'out_for_delivery' && o.order_type !== 'room_service') throw badRequest('Only room-service orders go out for delivery');
     if (FLOW.indexOf(b.status) < FLOW.indexOf(o.status)) throw badRequest(`Order is already ${o.status}`);
     await db.query(`UPDATE orders SET status = $1, status_changed_at = now() WHERE id = $2`, [b.status, id]);
-    if (o.status === 'received') await generateKots(db, req.hotelId, id);
-    if (['ready', 'out_for_delivery', 'delivered'].includes(b.status)) await db.query(`UPDATE kots SET status = 'ready' WHERE order_id = $1 AND status <> 'cancelled'`, [id]);
+    if (o.status === 'received') {
+      await generateKots(db, req.hotelId, id);
+      if (o.source === 'guest_qr' && o.settlement === 'unsettled' && o.room_id) {
+        const stay = await activeStayForRoom(db, req.hotelId, o.room_id);
+        if (stay) await postToRoom(db, { hotel: req.hotel, userId: req.user.id }, await recalcOrder(db, id), stay);
+      }
+    }
+    if (b.status === 'delivered') await db.query(`UPDATE kots SET status = 'delivered' WHERE order_id = $1 AND status <> 'cancelled'`, [id]);
+    else if (['ready', 'out_for_delivery'].includes(b.status)) await db.query(`UPDATE kots SET status = 'ready' WHERE order_id = $1 AND status IN ('pending','preparing')`, [id]);
     await audit(req, 'order.status', 'order', id, { from: o.status, to: b.status }, db);
   });
   res.json(await loadOrder({ one, many }, req.hotelId, id));
@@ -315,10 +338,20 @@ r.post('/orders/:id/items/:itemId/cancel', requirePerm('pos.cancel'), async (req
   const b = parse(z.object({ reason: z.string().min(3) }), req.body);
   await tx(async (db) => {
     const o = await db.one('SELECT * FROM orders WHERE id = $1 AND hotel_id = $2 FOR UPDATE', [id, req.hotelId]);
-    if (!o || o.settlement !== 'unsettled' || o.status === 'cancelled') throw conflict('Only open, unsettled orders can be changed');
+    if (!o || !['unsettled', 'room_posted'].includes(o.settlement) || o.status === 'cancelled') throw conflict('Only open orders can be changed');
+    if (o.settlement === 'room_posted') {
+      const f = await db.one('SELECT status FROM folios WHERE id = $1', [o.folio_id]);
+      if (f?.status !== 'open') throw conflict('The room bill is already invoiced');
+    }
     const it = await db.one(`UPDATE order_items SET cancelled = TRUE WHERE id = $1 AND order_id = $2 AND NOT cancelled RETURNING *`, [itemId, id]);
     if (!it) throw notFound();
-    await recalcOrder(db, id);
+    const updated = await recalcOrder(db, id);
+    if (o.settlement === 'room_posted') {
+      // Already on the room bill: take the old lines off and charge only what is left.
+      await db.query(`UPDATE folio_lines SET voided_at = now(), voided_by = $1, void_reason = $2
+                       WHERE source_type = 'order' AND source_id = $3 AND voided_at IS NULL`, [req.user.id, `Item removed (${it.name}): ${b.reason}`, id]);
+      await postOrderLines(db, { hotel: req.hotel, userId: req.user.id }, updated, o.folio_id);
+    }
     await audit(req, 'order.item_cancelled', 'order', id, { item: it.name, qty: it.quantity, amount_paise: it.amount_paise, reason: b.reason }, db);
   });
   res.json(await loadOrder({ one, many }, req.hotelId, id));
@@ -358,18 +391,18 @@ r.post('/orders/:id/discount', requirePerm('pos.discount'), async (req, res) => 
 });
 
 /** Post the order's items as folio lines (per item, plus a discount line). */
-async function postOrderLines(db, req, order, folioId) {
-  const ts = taxSettings(req.hotel);
+async function postOrderLines(db, { hotel, userId = null }, order, folioId) {
+  const ts = taxSettings(hotel);
   const items = await db.many(`SELECT * FROM order_items WHERE order_id = $1 AND NOT cancelled AND NOT complimentary`, [order.id]);
-  const today = hotelToday(req.hotel.timezone);
+  const today = hotelToday(hotel.timezone);
   const category = order.order_type === 'room_service' ? 'room_service' : 'food';
   for (const i of items) {
     await db.query(
       `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, quantity, unit_price_paise, amount_paise, tax_rate, tax_paise,
                                 business_date, source_type, source_id, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'order',$12,$13)`,
-      [req.hotelId, folioId, category, `${i.name}${i.variant ? ` (${i.variant})` : ''} — ${order.order_no}`, ts.food_sac, i.quantity,
-        i.unit_price_paise, i.amount_paise, i.tax_rate, taxOn(i.amount_paise, i.tax_rate), today, order.id, req.user.id]);
+      [hotel.id, folioId, category, `${i.name}${i.variant ? ` (${i.variant})` : ''} — ${order.order_no}`, ts.food_sac, i.quantity,
+        i.unit_price_paise, i.amount_paise, i.tax_rate, taxOn(i.amount_paise, i.tax_rate), today, order.id, userId]);
   }
   if (order.discount_paise > 0) {
     const pre = items.reduce((a, i) => a + taxOn(i.amount_paise, i.tax_rate), 0);
@@ -379,7 +412,7 @@ async function postOrderLines(db, req, order, folioId) {
       `INSERT INTO folio_lines (hotel_id, folio_id, category, description, quantity, unit_price_paise, amount_paise, tax_rate, tax_paise,
                                 business_date, source_type, source_id, created_by)
        VALUES ($1,$2,'discount',$3,1,$4,$4,$5,$6,$7,'order',$8,$9)`,
-      [req.hotelId, folioId, `Discount — ${order.order_no}`, -order.discount_paise, rate, taxDiff, today, order.id, req.user.id]);
+      [hotel.id, folioId, `Discount — ${order.order_no}`, -order.discount_paise, rate, taxDiff, today, order.id, userId]);
   }
 }
 
@@ -414,7 +447,7 @@ r.post('/orders/:id/settle', requirePerm('pos.settle'), async (req, res) => {
       if (!stay) throw conflict('No guest is checked in to that room — cannot post to room');
       const folio = await db.one('SELECT status FROM folios WHERE id = $1', [stay.folio_id]);
       if (folio.status !== 'open') throw conflict('Room bill is closed');
-      await postOrderLines(db, req, o, stay.folio_id);
+      await postOrderLines(db, { hotel: req.hotel, userId: req.user.id }, o, stay.folio_id);
       await db.query(`UPDATE orders SET settlement = 'room_posted', folio_id = $1, stay_id = $2, room_id = $3 WHERE id = $4`, [stay.folio_id, stay.id, roomId, id]);
       await audit(req, 'order.posted_to_room', 'order', id, { room: stay.room_number, folio_id: stay.folio_id, total_paise: o.total_paise }, db);
       return { settlement: 'room_posted', folio_id: stay.folio_id };
@@ -425,7 +458,7 @@ r.post('/orders/:id/settle', requirePerm('pos.settle'), async (req, res) => {
     const folio = await db.one(
       `INSERT INTO folios (hotel_id, kind, bill_to_name, bill_to_gstin) VALUES ($1,'restaurant',$2,$3) RETURNING id`,
       [req.hotelId, o.customer_name, b.bill_to_gstin || null]);
-    await postOrderLines(db, req, o, folio.id);
+    await postOrderLines(db, { hotel: req.hotel, userId: req.user.id }, o, folio.id);
     for (const p of b.payments) {
       await db.query(`INSERT INTO payments (hotel_id, folio_id, kind, method, amount_paise, reference, received_by) VALUES ($1,$2,'payment',$3,$4,$5,$6)`,
         [req.hotelId, folio.id, p.method, p.amount_paise, p.reference || null, req.user.id]);
@@ -453,27 +486,42 @@ r.get('/kitchen/kots', requirePerm('kitchen.view'), async (req, res) => {
                                                'notes', i.notes, 'cancelled', i.cancelled) ORDER BY i.id)
                FROM order_items i WHERE i.kot_id = k.id) AS items
        FROM kots k JOIN orders o ON o.id = k.order_id LEFT JOIN stations st ON st.id = k.station_id LEFT JOIN rooms r ON r.id = o.room_id
-      WHERE k.hotel_id = $1 AND (k.status IN ('pending','preparing') OR (k.status = 'ready' AND k.created_at > now() - interval '30 minutes')) ${stationCond}
+      WHERE k.hotel_id = $1 AND k.status IN ('pending','preparing','ready') AND o.status <> 'cancelled' ${stationCond}
       ORDER BY k.created_at`, vals);
   // Guest QR orders waiting for staff acceptance
   const awaiting = await many(
     `SELECT o.id, o.order_no, o.order_type, o.created_at, r.number AS room_number, o.total_paise,
             (SELECT json_agg(json_build_object('name', i.name, 'variant', i.variant, 'quantity', i.quantity, 'notes', i.notes)) FROM order_items i WHERE i.order_id = o.id) AS items
        FROM orders o LEFT JOIN rooms r ON r.id = o.room_id WHERE o.hotel_id = $1 AND o.status = 'received' ORDER BY o.created_at`, [req.hotelId]);
-  res.json({ kots, awaiting_acceptance: awaiting });
+  // Tickets the front desk cancelled in the last 15 minutes, so the kitchen knows to stop.
+  const cancelled = await many(
+    `SELECT k.id, k.kot_no, o.order_no, o.order_type, o.table_label, o.cancel_reason, r.number AS room_number,
+            (SELECT json_agg(json_build_object('name', i.name, 'quantity', i.quantity) ORDER BY i.id) FROM order_items i WHERE i.kot_id = k.id) AS items
+       FROM kots k JOIN orders o ON o.id = k.order_id LEFT JOIN rooms r ON r.id = o.room_id
+      WHERE k.hotel_id = $1 AND k.status = 'cancelled' AND o.status = 'cancelled' AND o.status_changed_at > now() - interval '15 minutes'
+      ORDER BY o.status_changed_at DESC`, [req.hotelId]);
+  res.json({ kots, awaiting_acceptance: awaiting, cancelled });
 });
 
 r.patch('/kots/:id', requirePerm('kitchen.view'), async (req, res) => {
   const id = idParam(req.params.id);
-  const b = parse(z.object({ status: z.enum(['preparing', 'ready']).optional(), printed: z.boolean().optional() }), req.body);
+  const b = parse(z.object({ status: z.enum(['preparing', 'ready', 'delivered']).optional(), printed: z.boolean().optional() }), req.body);
   const kot = await tx(async (db) => {
     const k = await db.one(`SELECT * FROM kots WHERE id = $1 AND hotel_id = $2 FOR UPDATE`, [id, req.hotelId]);
     if (!k) throw notFound();
     if (b.printed) await db.query(`UPDATE kots SET printed_at = now() WHERE id = $1`, [id]);
     if (b.status) {
-      if (k.status === 'cancelled') throw conflict('KOT is cancelled');
+      if (k.status === 'cancelled') throw conflict('This order was cancelled by the front desk');
       await db.query(`UPDATE kots SET status = $1 WHERE id = $2`, [b.status, id]);
       const o = await db.one('SELECT status FROM orders WHERE id = $1', [k.order_id]);
+      if (b.status === 'delivered') {
+        // The order is delivered once every station's ticket is.
+        const open = await db.one(`SELECT count(*)::int AS n FROM kots WHERE order_id = $1 AND status IN ('pending','preparing','ready')`, [k.order_id]);
+        if (!open.n && !['delivered', 'cancelled'].includes(o.status)) {
+          await db.query(`UPDATE orders SET status = 'delivered', status_changed_at = now() WHERE id = $1`, [k.order_id]);
+          await audit(req, 'order.status', 'order', k.order_id, { from: o.status, to: 'delivered', by: 'kitchen' }, db);
+        }
+      }
       if (b.status === 'preparing' && o.status === 'accepted') {
         await db.query(`UPDATE orders SET status = 'preparing', status_changed_at = now() WHERE id = $1`, [k.order_id]);
       }

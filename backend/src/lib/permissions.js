@@ -1,4 +1,4 @@
-// Central permission catalogue. Roles get a default set; owners/managers can grant or
+// Central permission catalogue. Roles get a default set; owners can grant or
 // revoke individual permissions per staff member (users.extra_permissions / revoked_permissions).
 
 export const PERMISSIONS = {
@@ -45,20 +45,18 @@ export const PERMISSIONS = {
 const ALL = Object.keys(PERMISSIONS);
 const pick = (...prefixes) => ALL.filter((p) => prefixes.some((x) => p === x || p.startsWith(x + '.')));
 
+// Three roles. Front desk also covers housekeeping, maintenance and the day-to-day manager work.
+// Money-sensitive actions (discounts, voids, refunds, rate overrides) stay with the owner unless
+// the owner grants them to a specific person.
 export const ROLE_PERMISSIONS = {
   owner: ALL,
-  manager: ALL.filter((p) => p !== 'hotel.settings'),
-  receptionist: [
-    ...pick('bookings', 'guests', 'requests'),
+  front_desk: [
+    ...pick('bookings', 'guests', 'requests', 'hk', 'maintenance'),
     'rooms.status', 'folio.view', 'folio.charge', 'payments.record', 'invoice.issue',
-    'hk.view', 'hk.manage', 'maintenance.view', 'maintenance.manage', 'pos.order', 'pos.settle', 'kitchen.view',
+    'pos.order', 'pos.settle', 'pos.cancel',
   ],
-  cashier: ['bookings.view', 'guests.view', 'folio.view', 'folio.charge', 'payments.record', 'invoice.issue',
-    'pos.order', 'pos.settle', 'reports.view'],
-  restaurant: ['pos.order', 'pos.settle', 'kitchen.view', 'requests.view'],
+  // Kitchen sees incoming tickets and marks them delivered. Cancelling is front desk only.
   kitchen: ['kitchen.view'],
-  housekeeping: ['hk.view', 'hk.work', 'rooms.status', 'requests.view', 'maintenance.view', 'maintenance.manage'],
-  maintenance: ['maintenance.view', 'maintenance.work', 'hk.view'],
 };
 
 export const ROLES = Object.keys(ROLE_PERMISSIONS);

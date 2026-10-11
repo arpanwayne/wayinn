@@ -23,7 +23,8 @@ const login = async (email) => (await call('POST', '/api/auth/login', { email, p
 before(async () => {
   server = createApp().listen(0);
   base = `http://127.0.0.1:${server.address().port}`;
-  for (const who of ['owner', 'reception', 'kitchen', 'hk', 'restaurant']) tok[who] = await login(`${who}@demo-hotel.in`);
+  for (const who of ['owner', 'frontdesk', 'kitchen']) tok[who] = await login(`${who}@demo-hotel.in`);
+  tok.reception = tok.hk = tok.restaurant = tok.frontdesk; // one front-desk role covers all three jobs
   // Clean slate for repeatable runs: free rooms 101/102 for today
   await pool.query(`UPDATE stays SET status = 'cancelled' WHERE hotel_id = 1 AND status IN ('reserved','checked_in','tentative')`);
   await pool.query(`UPDATE orders SET status = 'cancelled' WHERE hotel_id = 1 AND status <> 'cancelled'`);
@@ -77,10 +78,12 @@ test('full guest journey', async () => {
   const order = res.data;
   assert.equal(order.subtotal_paise, 28000 + 12000);
   assert.equal(order.kots.length, 1);
-  // Kitchen moves KOT to ready → order ready
-  await call('PATCH', `/api/kots/${order.kots[0].id}`, { status: 'preparing' }, tok.kitchen);
-  await call('PATCH', `/api/kots/${order.kots[0].id}`, { status: 'ready' }, tok.kitchen);
-  assert.equal((await call('GET', `/api/orders/${order.id}`, null, tok.restaurant)).data.status, 'ready');
+  // Kitchen has one action: Delivered → order delivered. Kitchen cannot cancel.
+  assert.equal((await call('POST', `/api/orders/${order.id}/cancel`, { reason: 'out of dal' }, tok.kitchen)).status, 403);
+  res = await call('PATCH', `/api/kots/${order.kots[0].id}`, { status: 'delivered' }, tok.kitchen);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal((await call('GET', `/api/orders/${order.id}`, null, tok.restaurant)).data.status, 'delivered');
+  assert.equal((await call('GET', '/api/kitchen/kots', null, tok.kitchen)).data.kots.some((k) => k.order_id === order.id), false);
   res = await call('POST', `/api/orders/${order.id}/settle`, { mode: 'room' }, tok.restaurant);
   assert.equal(res.status, 200, JSON.stringify(res.data));
 
@@ -88,7 +91,7 @@ test('full guest journey', async () => {
   res = await call('GET', `/api/folios/${stay.folio_id}`, null, tok.kitchen);
   assert.equal(res.status, 403);
 
-  // Guest QR portal: public view shows no guest data; verify with PIN; order needs acceptance
+  // Guest QR portal: public view shows no guest data; the bill needs the PIN
   res = await call('GET', `/api/portal/${r101.qr_token}`);
   assert.equal(res.data.occupied, true);
   assert.equal(res.data.guest_name, undefined);
@@ -97,26 +100,68 @@ test('full guest journey', async () => {
   res = await call('POST', `/api/portal/${r101.qr_token}/verify`, { code: pin });
   assert.equal(res.status, 200);
   const guestTok = res.data.token;
-  const chai = menu.items.find((i) => i.name === 'Masala Chai');
-  res = await call('POST', '/api/guest/orders', { items: [{ menu_item_id: chai.id, quantity: 2 }] }, guestTok);
-  assert.equal(res.status, 201);
-  assert.equal(res.data.status, 'received');
-  const qrOrder = res.data;
   // Guest token can't be used on staff APIs
   assert.equal((await call('GET', '/api/bookings', null, guestTok)).status, 401);
-  // Another room's QR shows no stay
+  // Another room's QR shows no stay, and an empty room cannot order
   assert.equal((await call('POST', `/api/portal/${r102.qr_token}/verify`, { code: pin })).status, 409);
+  const chai = menu.items.find((i) => i.name === 'Masala Chai');
+  const paratha = menu.items.find((i) => i.name === 'Aloo Paratha with Curd');
+  res = await call('POST', `/api/portal/${r102.qr_token}/orders`, { items: [{ menu_item_id: chai.id, quantity: 1 }] });
+  assert.equal(res.status, 409);
   // Towel request creates an HK task
   res = await call('POST', `/api/portal/${r101.qr_token}/requests`, { type: 'towels', message: '2 extra towels' });
   assert.equal(res.status, 201);
 
-  // Checkout blocked: unsettled QR order
-  await call('PATCH', `/api/orders/${qrOrder.id}/status`, { status: 'accepted' }, tok.restaurant);
-  res = await call('POST', `/api/stays/${stay.id}/checkout`, {}, tok.reception);
-  assert.equal(res.status, 409);
-  await call('POST', `/api/orders/${qrOrder.id}/settle`, { mode: 'room' }, tok.restaurant);
+  // QR order from the checked-in room, no PIN: straight to the kitchen and onto the room bill
+  const before = (await call('GET', `/api/folios/${stay.folio_id}`, null, tok.reception)).data.totals.total_paise;
+  res = await call('POST', `/api/portal/${r101.qr_token}/orders`, { items: [{ menu_item_id: chai.id, quantity: 2 }, { menu_item_id: paratha.id, quantity: 1 }] });
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  assert.equal(res.data.status, 'accepted');
+  const qrOrder = (await call('GET', `/api/orders/${res.data.id}`, null, tok.frontdesk)).data;
+  assert.equal(qrOrder.settlement, 'room_posted');
+  assert.equal(qrOrder.kots.length, 2); // Beverages + Kitchen stations
+  assert.equal(qrOrder.total_paise, Math.round((12000 + 18000) * 1.05));
+  folio = (await call('GET', `/api/folios/${stay.folio_id}`, null, tok.reception)).data;
+  assert.equal(folio.totals.total_paise, before + qrOrder.total_paise);
+  let kds = (await call('GET', '/api/kitchen/kots', null, tok.kitchen)).data;
+  assert.equal(kds.kots.filter((k) => k.order_id === qrOrder.id).length, 2);
+  assert.equal(kds.awaiting_acceptance.length, 0);
+  // Front desk removes one item (kitchen can't make it): only that charge leaves the bill
+  const parathaItem = qrOrder.items.find((i) => i.name === paratha.name);
+  assert.equal((await call('POST', `/api/orders/${qrOrder.id}/items/${parathaItem.id}/cancel`, { reason: 'no curd' }, tok.kitchen)).status, 403);
+  res = await call('POST', `/api/orders/${qrOrder.id}/items/${parathaItem.id}/cancel`, { reason: 'no curd' }, tok.frontdesk);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  folio = (await call('GET', `/api/folios/${stay.folio_id}`, null, tok.reception)).data;
+  assert.equal(folio.totals.total_paise, before + Math.round(12000 * 1.05));
+  // Each station marks its ticket delivered; the order is delivered when both are
+  const [k1, k2] = qrOrder.kots;
+  await call('PATCH', `/api/kots/${k1.id}`, { status: 'delivered' }, tok.kitchen);
+  assert.equal((await call('GET', `/api/orders/${qrOrder.id}`, null, tok.frontdesk)).data.status, 'accepted');
+  await call('PATCH', `/api/kots/${k2.id}`, { status: 'delivered' }, tok.kitchen);
+  assert.equal((await call('GET', `/api/orders/${qrOrder.id}`, null, tok.frontdesk)).data.status, 'delivered');
 
-  // Discount + void are audited, receptionist cannot void
+  // A second QR order is cancelled by the front desk: charge comes off, kitchen is told to stop
+  res = await call('POST', `/api/portal/${r101.qr_token}/orders`, { items: [{ menu_item_id: chai.id, quantity: 4 }] });
+  assert.equal(res.status, 201);
+  const qr2 = res.data;
+  assert.equal((await call('POST', `/api/orders/${qr2.id}/cancel`, { reason: 'kitchen closed' }, tok.kitchen)).status, 403);
+  res = await call('POST', `/api/orders/${qr2.id}/cancel`, { reason: 'kitchen closed' }, tok.frontdesk);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  folio = (await call('GET', `/api/folios/${stay.folio_id}`, null, tok.reception)).data;
+  assert.equal(folio.totals.total_paise, before + Math.round(12000 * 1.05));
+  kds = (await call('GET', '/api/kitchen/kots', null, tok.kitchen)).data;
+  assert.equal(kds.kots.some((k) => k.order_id === qr2.id), false);
+  assert.ok(kds.cancelled.some((k) => k.order_no === qr2.order_no));
+
+  // Front desk and kitchen are kept out of owner-only areas
+  assert.equal((await call('GET', '/api/staff', null, tok.frontdesk)).status, 403);
+  assert.equal((await call('GET', '/api/reports/daily', null, tok.frontdesk)).status, 403);
+  assert.equal((await call('GET', '/api/hotel/audit', null, tok.frontdesk)).status, 403);
+  assert.equal((await call('GET', '/api/bookings', null, tok.kitchen)).status, 403);
+  assert.equal((await call('POST', '/api/orders', { order_type: 'takeaway', items: [{ menu_item_id: chai.id, quantity: 1 }] }, tok.kitchen)).status, 403);
+  assert.equal((await call('POST', '/api/staff', { name: 'Old Role', email: 'old@x.in', password: 'Password1', role: 'manager' }, tok.owner)).status, 400);
+
+  // Discount + void are audited, front desk cannot void
   res = await call('POST', `/api/folios/${stay.folio_id}/discount`, { percent: 10, apply_to: 'room', reason: 'Repeat guest' }, tok.owner);
   assert.equal(res.status, 201, JSON.stringify(res.data));
   folio = (await call('GET', `/api/folios/${stay.folio_id}`, null, tok.owner)).data;

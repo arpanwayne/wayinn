@@ -39,7 +39,7 @@ export default function Layout() {
       <div className="px-5 py-5"><Logo light /></div>
       <div className="mx-3 mb-3 rounded-lg bg-brand-800/60 px-3 py-2">
         <div className="truncate text-sm font-semibold text-white">{hotel?.name}</div>
-        <div className="text-xs text-brand-200">{user?.name} · {user?.role}</div>
+        <div className="text-xs text-brand-200">{user?.name} · {(user?.role || '').replace('_', ' ')}</div>
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-3">
         {items.map(([to, l, , icon]) => (
