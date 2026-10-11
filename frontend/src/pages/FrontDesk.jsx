@@ -4,14 +4,76 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { rupees, fmtDate, fmtDateLong, ago } from '../lib/format.js';
-import { PageHeader, Stat, Badge, Empty, Loading, ReasonDialog, useAction, useToast } from '../components/ui.jsx';
+import { PageHeader, Badge, Empty, Loading, ReasonDialog, useAction, useToast } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
+
+// The hero: every room as a key on the rack, so the whole house reads at a glance.
+const KEY = {
+  occupied: 'bg-amber-400 text-night-950', reserved: 'bg-violet-400/90 text-night-950', available: 'text-white ring-1 ring-inset ring-white/25',
+  dirty: 'bg-white/15 text-amber-200 ring-1 ring-inset ring-amber-300/60', cleaning: 'bg-white/15 text-amber-200 ring-1 ring-inset ring-amber-300/60',
+  inspected: 'text-white ring-1 ring-inset ring-brand-300/70', out_of_order: 'bg-red-500/85 text-white',
+};
+const KEY_LEGEND = [['occupied', 'Occupied'], ['available', 'Vacant'], ['reserved', 'Arriving today'], ['dirty', 'Needs cleaning'], ['out_of_order', 'Out of order']];
+
+function KeyRack({ counts: c, rooms }) {
+  const sellable = c.total_rooms - c.out_of_order;
+  const pct = sellable ? Math.round((c.occupied / sellable) * 100) : 0;
+  const floors = [...new Set(rooms.map((r) => r.floor || ''))];
+  const facts = [
+    [c.arrivals_pending, 'arrivals left', c.unallocated_arrivals ? `${c.unallocated_arrivals} without a room` : null],
+    [c.departures_pending, 'departures left', null],
+    [c.dirty, 'rooms to clean', null],
+  ];
+  return (
+    <div className="hero">
+      <div className="relative z-10 grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="flex flex-col justify-between gap-6">
+          <div>
+            <div className="num text-6xl leading-none sm:text-7xl">{c.occupied}<span className="text-night-400">/{sellable}</span></div>
+            <div className="mt-2 text-night-200">rooms occupied tonight · {pct}% full · {c.vacant} vacant</div>
+          </div>
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
+            {facts.map(([n, l, warn]) => (
+              <div key={l}>
+                <div className={`num text-2xl ${n ? 'text-white' : 'text-night-400'}`}>{n}</div>
+                <div className="text-sm text-night-300">{l}</div>
+                {warn && <div className="text-xs font-semibold text-amber-300">{warn}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="space-y-2">
+            {floors.map((fl) => (
+              <div key={fl} className="flex items-start gap-3">
+                <div className="w-14 shrink-0 pt-2 text-xs text-night-300">{fl ? `Floor ${fl}` : 'Rooms'}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {rooms.filter((r) => (r.floor || '') === fl).map((r) => (
+                    <Link key={r.id} to={r.booking_id ? `/bookings/${r.booking_id}` : '/rooms'} title={`${r.number} · ${r.room_type} · ${r.guest_name || r.arriving_guest || r.display_status.replace(/_/g, ' ')}`}
+                      className={`num relative flex h-10 w-12 items-center justify-center rounded-lg text-sm transition hover:-translate-y-0.5 ${KEY[r.display_status] || KEY.available}`}>
+                      {r.number}
+                      {r.due_out && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-night-900" />}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 pl-[4.25rem] text-xs text-night-300">
+            {KEY_LEGEND.map(([k, l]) => <span key={k} className="flex items-center gap-1.5"><span className={`h-3 w-3 rounded ${KEY[k]}`} />{l}</span>)}
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />Due out today</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Section({ title, count, children, action }) {
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
-        <h2>{title} {count !== undefined && <span className="ml-1 text-ink-400">{count}</span>}</h2>
+      <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3.5">
+        <h2 className="flex items-center gap-2">{title}{count !== undefined && <span className={`num rounded-full px-2 py-0.5 text-xs ${count ? 'bg-amber-100 text-amber-600' : 'bg-ink-100 text-ink-400'}`}>{count}</span>}</h2>
         {action}
       </div>
       {children}
@@ -25,6 +87,7 @@ export default function FrontDesk() {
   const alerts = useApi('/alerts', { interval: 60000 });
   const requests = useApi(can('requests.view') ? '/requests' : null, { interval: 30000, skip: !can('requests.view') });
   const handover = useApi('/hotel/handover');
+  const board = useApi('/rooms/board', { interval: 30000 });
   // Room orders are for information: they are already with the kitchen and on the room bill.
   const orders = useApi(can('pos.order') ? '/orders?active=1' : null, { interval: 15000, skip: !can('pos.order') });
   const toast = useToast();
@@ -55,14 +118,7 @@ export default function FrontDesk() {
           <Link to="/bookings/new?walkin=1" className="btn-primary">+ Walk-in</Link>
           <Link to="/bookings/new" className="btn-secondary">+ Reservation</Link>
         </>} />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Stat label="Occupied" value={`${c.occupied}/${c.total_rooms - c.out_of_order}`} />
-        <Stat label="Vacant" value={c.vacant} tone="good" />
-        <Stat label="Arrivals left" value={c.arrivals_pending} sub={c.unallocated_arrivals ? `${c.unallocated_arrivals} without room` : null} tone={c.unallocated_arrivals ? 'warn' : 'default'} />
-        <Stat label="Departures left" value={c.departures_pending} />
-        <Stat label="Dirty rooms" value={c.dirty} tone={c.dirty ? 'warn' : 'default'} />
-        <Stat label="Out of order" value={c.out_of_order} tone={c.out_of_order ? 'bad' : 'default'} />
-      </div>
+      <KeyRack counts={c} rooms={board.data || []} />
 
       {alerts.data?.length > 0 && (
         <div className="card divide-y divide-ink-50">

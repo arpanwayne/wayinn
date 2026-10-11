@@ -15,7 +15,7 @@ export function ToastProvider({ children }) {
       {children}
       <div className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 no-print">
         {toasts.map((t) => (
-          <div key={t.id} className={`max-w-sm rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${t.type === 'error' ? 'bg-red-600 text-white' : 'bg-ink-900 text-white'}`}>
+          <div key={t.id} className={`max-w-sm rounded-xl px-4 py-3 text-sm font-medium shadow-lift ${t.type === 'error' ? 'bg-red-600 text-white' : 'border-l-4 border-amber-400 bg-night-900 text-white'}`}>
             {t.msg}
           </div>
         ))}
@@ -80,7 +80,7 @@ export function Field({ label: l, children, hint, className = '' }) {
 
 export function PageHeader({ title, subtitle, actions }) {
   return (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1>{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-ink-500">{subtitle}</p>}
@@ -93,21 +93,21 @@ export function PageHeader({ title, subtitle, actions }) {
 export function Stat({ label: l, value, sub, tone = 'default' }) {
   const tones = { default: 'text-ink-900', good: 'text-brand-700', warn: 'text-amber-600', bad: 'text-red-600' };
   return (
-    <div className="card px-4 py-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-ink-400">{l}</div>
-      <div className={`mt-1 text-2xl font-bold tabular-nums ${tones[tone]}`}>{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-ink-500">{sub}</div>}
+    <div className="card px-4 py-3.5">
+      <div className="text-[13px] font-medium text-ink-500">{l}</div>
+      <div className={`num mt-1 text-[1.75rem] leading-none ${tones[tone]}`}>{value}</div>
+      {sub && <div className="mt-1.5 text-xs text-ink-400">{sub}</div>}
     </div>
   );
 }
 
 const STATUS_COLORS = {
   available: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200', ready: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200',
-  inspected: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200', occupied: 'bg-ink-800 text-white', reserved: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
+  inspected: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200', occupied: 'bg-night-900 text-white', reserved: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
   dirty: 'bg-amber-50 text-amber-600 ring-1 ring-amber-100', cleaning: 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200',
   out_of_order: 'bg-red-50 text-red-700 ring-1 ring-red-200',
   tentative: 'bg-amber-50 text-amber-600', requested: 'bg-amber-50 text-amber-600', confirmed: 'bg-brand-50 text-brand-700',
-  checked_in: 'bg-ink-800 text-white', checked_out: 'bg-ink-100 text-ink-500', cancelled: 'bg-red-50 text-red-600', no_show: 'bg-red-50 text-red-600',
+  checked_in: 'bg-night-900 text-white', checked_out: 'bg-ink-100 text-ink-500', cancelled: 'bg-red-50 text-red-600', no_show: 'bg-red-50 text-red-600',
   open: 'bg-amber-50 text-amber-600', closed: 'bg-ink-100 text-ink-600', pending: 'bg-amber-50 text-amber-600', in_progress: 'bg-sky-50 text-sky-700',
   done: 'bg-brand-50 text-brand-700', resolved: 'bg-brand-50 text-brand-700', acknowledged: 'bg-sky-50 text-sky-700',
   received: 'bg-amber-50 text-amber-600', accepted: 'bg-sky-50 text-sky-700', preparing: 'bg-yellow-50 text-yellow-700',
@@ -138,7 +138,7 @@ export function Tabs({ tabs, value, onChange }) {
     <div className="mb-4 flex gap-1 overflow-x-auto border-b border-ink-100">
       {tabs.map(([k, l]) => (
         <button key={k} onClick={() => onChange(k)}
-          className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${value === k ? 'border-brand-600 text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-800'}`}>
+          className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-semibold ${value === k ? 'border-amber-400 text-ink-900' : 'border-transparent text-ink-500 hover:text-ink-800'}`}>
           {l}
         </button>
       ))}

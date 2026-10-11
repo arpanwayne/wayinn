@@ -71,10 +71,10 @@ export default function GuestPortal() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-ink-50 pb-28">
-      <header className="bg-brand-900 px-5 pb-6 pt-8 text-white">
-        <div className="text-xs uppercase tracking-widest text-brand-200">{info.hotel.name}</div>
-        <div className="mt-1 text-2xl font-extrabold">Room {info.room.number}</div>
-        <div className="mt-1 text-sm text-brand-200">{me ? `Hi ${me.guest_name.split(' ')[0]} · checkout ${fmtDate(me.check_out)} by ${me.checkout_time?.slice(0, 5)}` : info.occupied ? 'Order food to your room, request service or view your bill' : 'This room has no active stay'}</div>
+      <header className="bg-night-900 px-5 pb-6 pt-8 text-white">
+        <div className="text-sm font-medium text-amber-300">{info.hotel.name}</div>
+        <div className="mt-1 font-display text-3xl font-bold">Room {info.room.number}</div>
+        <div className="mt-1 text-sm text-night-200">{me ? `Hi ${me.guest_name.split(' ')[0]} · checkout ${fmtDate(me.check_out)} by ${me.checkout_time?.slice(0, 5)}` : info.occupied ? 'Order food to your room, request service or view your bill' : 'This room has no active stay'}</div>
       </header>
       <nav className="sticky top-0 z-10 grid grid-cols-4 border-b border-ink-100 bg-white text-sm font-semibold">
         {[['menu', 'Menu'], ['requests', 'Requests'], ['orders', 'Orders'], ['bill', 'My stay']].map(([k, l]) => (

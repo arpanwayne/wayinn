@@ -12,7 +12,7 @@ export default function InvoicePrint() {
   const h = inv.hotel;
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-ink-900">
-      <div className="no-print mb-4 flex justify-end gap-2"><button className="btn-primary" onClick={() => window.print()}>Print</button></div>
+      <div className="no-print mb-4 flex justify-end gap-2"><span className="self-center text-xs text-ink-500">To download, choose “Save as PDF” as the printer.</span><button className="btn-primary" onClick={() => window.print()}>Print / Save as PDF</button></div>
       <div className="flex justify-between border-b-2 border-ink-900 pb-4">
         <div>
           <div className="text-2xl font-extrabold">{h.name}</div>

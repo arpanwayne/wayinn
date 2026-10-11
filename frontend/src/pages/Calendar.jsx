@@ -47,7 +47,7 @@ export default function Calendar() {
               return (
                 <div key={room.id}>
                   {(!prev || prev.room_type_id !== room.room_type_id) && (
-                    <div className="border-b border-ink-100 bg-ink-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-ink-400">{room.room_type}</div>
+                    <div className="border-b border-ink-100 bg-ink-50 px-3 py-1 text-[11px] font-semibold tracking-wide text-ink-400">{room.room_type}</div>
                   )}
                   <div className="relative flex h-10 border-b border-ink-50">
                     <div className="flex w-[140px] shrink-0 items-center gap-2 px-3 text-sm font-semibold">

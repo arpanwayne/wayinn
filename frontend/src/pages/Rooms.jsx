@@ -7,7 +7,7 @@ import { fmtDate, label } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, useAction } from '../components/ui.jsx';
 
 const TILE = {
-  available: 'border-brand-200 bg-brand-50', occupied: 'border-ink-700 bg-ink-800 text-white', reserved: 'border-violet-200 bg-violet-50',
+  available: 'border-brand-200 bg-brand-50', occupied: 'border-night-900 bg-night-900 text-white', reserved: 'border-violet-200 bg-violet-50',
   dirty: 'border-amber-200 bg-amber-50', cleaning: 'border-yellow-200 bg-yellow-50', inspected: 'border-sky-200 bg-sky-50', out_of_order: 'border-red-200 bg-red-50',
 };
 
@@ -34,12 +34,12 @@ export default function Rooms() {
       </div>
       {floors.map((fl) => (
         <div key={fl} className="mb-5">
-          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-400">Floor {fl}</div>
+          <div className="mb-2 text-sm font-semibold text-ink-500">Floor {fl}</div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
             {shown.filter((r) => (r.floor || '—') === fl).map((r) => (
               <button key={r.id} onClick={() => { setSel(r); setStatus(r.hk_status); setReason(r.out_of_order_reason || ''); }}
                 className={`rounded-xl border p-3 text-left transition hover:shadow-md ${TILE[r.display_status]}`}>
-                <div className="flex items-start justify-between"><span className="text-lg font-bold">{r.number}</span>{r.due_out && <span className="badge bg-amber-400 text-ink-900">Due out</span>}</div>
+                <div className="flex items-start justify-between"><span className="num text-xl">{r.number}</span>{r.due_out && <span className="badge bg-amber-400 text-ink-900">Due out</span>}</div>
                 <div className={`text-xs ${r.display_status === 'occupied' ? 'text-ink-200' : 'text-ink-500'}`}>{r.room_type}</div>
                 <div className="mt-2 text-xs font-semibold">{label(r.display_status)}</div>
                 {r.guest_name && <div className="truncate text-xs">{r.guest_name}</div>}

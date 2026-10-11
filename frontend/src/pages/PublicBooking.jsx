@@ -38,11 +38,11 @@ export default function PublicBooking() {
   const types = Object.fromEntries(hotel.room_types.map((t) => [t.id, t]));
   return (
     <div className="min-h-screen">
-      <header className="bg-brand-900 px-4 py-10 text-white">
+      <header className="bg-night-900 px-4 py-10 text-white">
         <div className="mx-auto max-w-4xl">
           <h1 className="text-3xl font-extrabold">{hotel.name}</h1>
-          <p className="mt-1 text-brand-200">{[hotel.address, hotel.city].filter(Boolean).join(', ')}</p>
-          <p className="text-sm text-brand-200">Check-in {hotel.checkin_time.slice(0, 5)} · Check-out {hotel.checkout_time.slice(0, 5)} {hotel.phone && `· ${hotel.phone}`}</p>
+          <p className="mt-1 text-night-200">{[hotel.address, hotel.city].filter(Boolean).join(', ')}</p>
+          <p className="text-sm text-night-200">Check-in {hotel.checkin_time.slice(0, 5)} · Check-out {hotel.checkout_time.slice(0, 5)} {hotel.phone && `· ${hotel.phone}`}</p>
         </div>
       </header>
       <main className="mx-auto max-w-4xl space-y-5 px-4 py-6">

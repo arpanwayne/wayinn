@@ -24,7 +24,7 @@ export function Logo({ light = false }) {
   return (
     <div className="flex items-center gap-2">
       <img src="/favicon.svg" alt="" className="h-8 w-8" />
-      <span className={`text-lg font-extrabold tracking-tight ${light ? 'text-white' : 'text-ink-900'}`}>Wayinn</span>
+      <span className={`font-display text-xl font-bold tracking-tight ${light ? 'text-white' : 'text-ink-900'}`}>Wayinn</span>
     </div>
   );
 }
@@ -35,17 +35,23 @@ export default function Layout() {
   const nav = useNavigate();
   const items = NAV.filter(([, , perms]) => can(...perms));
   const sidebar = (
-    <nav className="flex h-full flex-col bg-brand-900 text-brand-100">
+    <nav className="flex h-full flex-col bg-night-900 text-night-200">
       <div className="px-5 py-5"><Logo light /></div>
-      <div className="mx-3 mb-3 rounded-lg bg-brand-800/60 px-3 py-2">
-        <div className="truncate text-sm font-semibold text-white">{hotel?.name}</div>
-        <div className="text-xs text-brand-200">{user?.name} · {(user?.role || '').replace('_', ' ')}</div>
+      <div className="mx-3 mb-4 rounded-2xl bg-white/[0.06] px-3.5 py-3 ring-1 ring-white/10">
+        <div className="truncate font-display text-[15px] font-semibold text-white">{hotel?.name}</div>
+        <div className="mt-0.5 flex items-center gap-2 text-xs text-night-300">
+          <span className="truncate">{user?.name}</span>
+          <span className="rounded-full bg-amber-400/15 px-2 py-0.5 font-semibold capitalize text-amber-300">{(user?.role || '').replace('_', ' ')}</span>
+        </div>
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-3">
         {items.map(([to, l, , icon]) => (
           <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)}
-            className={({ isActive }) => `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-white/10 text-white' : 'hover:bg-white/5'}`}>
-            <span className="w-4 text-center text-amber-400">{icon}</span>{l}
+            className={({ isActive }) => `group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${isActive ? 'bg-white/10 text-white' : 'hover:bg-white/5 hover:text-white'}`}>
+            {({ isActive }) => (<>
+              {isActive && <span className="absolute inset-y-2 left-0 w-1 rounded-full bg-amber-400" />}
+              <span className={`w-4 text-center ${isActive ? 'text-amber-400' : 'text-night-400 group-hover:text-amber-300'}`}>{icon}</span>{l}
+            </>)}
           </NavLink>
         ))}
       </div>
@@ -64,7 +70,7 @@ export default function Layout() {
         </div>
       )}
       <div className="flex-1 lg:pl-60">
-        <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-ink-100 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
+        <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-ink-100 bg-white/90 px-4 py-2.5 backdrop-blur lg:hidden">
           <button className="btn-ghost btn-sm text-lg" onClick={() => setOpen(true)} aria-label="Menu">☰</button>
           <Logo />
         </header>
