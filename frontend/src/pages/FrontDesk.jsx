@@ -9,9 +9,9 @@ import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
 
 // The hero: every room as a key on the rack, so the whole house reads at a glance.
 const KEY = {
-  occupied: 'bg-amber-400 text-night-950', reserved: 'bg-violet-400/90 text-night-950', available: 'text-white ring-1 ring-inset ring-white/25',
-  dirty: 'bg-white/15 text-amber-200 ring-1 ring-inset ring-amber-300/60', cleaning: 'bg-white/15 text-amber-200 ring-1 ring-inset ring-amber-300/60',
-  inspected: 'text-white ring-1 ring-inset ring-brand-300/70', out_of_order: 'bg-red-500/85 text-white',
+  occupied: 'bg-white text-night-900', reserved: 'bg-amber-300 text-ink-900', available: 'text-white ring-1 ring-inset ring-white/50',
+  dirty: 'bg-white/25 text-white ring-2 ring-inset ring-white', cleaning: 'bg-white/25 text-white ring-2 ring-inset ring-white',
+  inspected: 'text-white ring-1 ring-inset ring-white/50', out_of_order: 'bg-ink-900 text-white',
 };
 const KEY_LEGEND = [['occupied', 'Occupied'], ['available', 'Vacant'], ['reserved', 'Arriving today'], ['dirty', 'Needs cleaning'], ['out_of_order', 'Out of order']];
 
@@ -29,15 +29,15 @@ function KeyRack({ counts: c, rooms }) {
       <div className="relative z-10 grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="flex flex-col justify-between gap-6">
           <div>
-            <div className="num text-6xl leading-none sm:text-7xl">{c.occupied}<span className="text-night-400">/{sellable}</span></div>
-            <div className="mt-2 text-night-200">rooms occupied tonight · {pct}% full · {c.vacant} vacant</div>
+            <div className="num text-6xl leading-none sm:text-7xl">{c.occupied}<span className="text-white/45">/{sellable}</span></div>
+            <div className="mt-2 text-night-100">rooms occupied tonight · {pct}% full · {c.vacant} vacant</div>
           </div>
           <div className="flex flex-wrap gap-x-8 gap-y-3">
             {facts.map(([n, l, warn]) => (
               <div key={l}>
-                <div className={`num text-2xl ${n ? 'text-white' : 'text-night-400'}`}>{n}</div>
-                <div className="text-sm text-night-300">{l}</div>
-                {warn && <div className="text-xs font-semibold text-amber-300">{warn}</div>}
+                <div className={`num text-2xl ${n ? 'text-white' : 'text-white/45'}`}>{n}</div>
+                <div className="text-sm text-night-100">{l}</div>
+                {warn && <div className="text-xs font-semibold text-amber-200">{warn}</div>}
               </div>
             ))}
           </div>
@@ -46,22 +46,22 @@ function KeyRack({ counts: c, rooms }) {
           <div className="space-y-2">
             {floors.map((fl) => (
               <div key={fl} className="flex items-start gap-3">
-                <div className="w-14 shrink-0 pt-2 text-xs text-night-300">{fl ? `Floor ${fl}` : 'Rooms'}</div>
+                <div className="w-14 shrink-0 pt-2 text-xs text-night-100">{fl ? `Floor ${fl}` : 'Rooms'}</div>
                 <div className="flex flex-wrap gap-1.5">
                   {rooms.filter((r) => (r.floor || '') === fl).map((r) => (
                     <Link key={r.id} to={r.booking_id ? `/bookings/${r.booking_id}` : '/rooms'} title={`${r.number} · ${r.room_type} · ${r.guest_name || r.arriving_guest || r.display_status.replace(/_/g, ' ')}`}
                       className={`num relative flex h-10 w-12 items-center justify-center rounded-lg text-sm transition hover:-translate-y-0.5 ${KEY[r.display_status] || KEY.available}`}>
                       {r.number}
-                      {r.due_out && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-night-900" />}
+                      {r.due_out && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-ink-900 ring-2 ring-white" />}
                     </Link>
                   ))}
                 </div>
               </div>
             ))}
           </div>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 pl-[4.25rem] text-xs text-night-300">
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 pl-[4.25rem] text-xs text-night-100">
             {KEY_LEGEND.map(([k, l]) => <span key={k} className="flex items-center gap-1.5"><span className={`h-3 w-3 rounded ${KEY[k]}`} />{l}</span>)}
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />Due out today</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-ink-900 ring-1 ring-white" />Due out today</span>
           </div>
         </div>
       </div>
@@ -73,7 +73,7 @@ function Section({ title, count, children, action }) {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3.5">
-        <h2 className="flex items-center gap-2">{title}{count !== undefined && <span className={`num rounded-full px-2 py-0.5 text-xs ${count ? 'bg-amber-100 text-amber-600' : 'bg-ink-100 text-ink-400'}`}>{count}</span>}</h2>
+        <h2 className="flex items-center gap-2">{title}{count !== undefined && <span className={`num rounded-full px-2 py-0.5 text-xs ${count ? 'bg-night-900 text-white' : 'bg-ink-100 text-ink-400'}`}>{count}</span>}</h2>
         {action}
       </div>
       {children}
@@ -196,7 +196,7 @@ export default function FrontDesk() {
             </Section>
           )}
           {can('pos.order') && (
-            <Section title="Room food orders" count={roomOrders.length} action={<Link to="/pos" className="text-xs font-semibold text-brand-700">All orders</Link>}>
+            <Section title="Room food orders" count={roomOrders.length} action={<Link to="/pos" className="text-xs font-semibold text-night-900">All orders</Link>}>
               {!roomOrders.length ? <Empty>No room orders in progress</Empty> : (
                 <table className="table"><tbody>
                   {roomOrders.map((o) => (
@@ -212,7 +212,7 @@ export default function FrontDesk() {
             </Section>
           )}
           {can('requests.view') && (
-            <Section title="Guest requests" count={openReq.length} action={<Link to="/requests" className="text-xs font-semibold text-brand-700">All</Link>}>
+            <Section title="Guest requests" count={openReq.length} action={<Link to="/requests" className="text-xs font-semibold text-night-900">All</Link>}>
               {!openReq.length ? <Empty>No open requests</Empty> : (
                 <table className="table"><tbody>
                   {openReq.slice(0, 6).map((r) => (

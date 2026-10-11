@@ -8,7 +8,7 @@ import { PageHeader, Badge, Loading, Modal, Field, useAction } from '../componen
 
 const TILE = {
   available: 'border-brand-200 bg-brand-50', occupied: 'border-night-900 bg-night-900 text-white', reserved: 'border-violet-200 bg-violet-50',
-  dirty: 'border-amber-200 bg-amber-50', cleaning: 'border-yellow-200 bg-yellow-50', inspected: 'border-sky-200 bg-sky-50', out_of_order: 'border-red-200 bg-red-50',
+  dirty: 'border-amber-200 bg-amber-50', cleaning: 'border-yellow-200 bg-yellow-50', inspected: 'border-sky-200 bg-sky-50', out_of_order: 'border-ink-800 bg-ink-800 text-white',
 };
 
 export default function Rooms() {

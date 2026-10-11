@@ -15,7 +15,7 @@ export function ToastProvider({ children }) {
       {children}
       <div className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 no-print">
         {toasts.map((t) => (
-          <div key={t.id} className={`max-w-sm rounded-xl px-4 py-3 text-sm font-medium shadow-lift ${t.type === 'error' ? 'bg-red-600 text-white' : 'border-l-4 border-amber-400 bg-night-900 text-white'}`}>
+          <div key={t.id} className={`max-w-sm rounded-xl px-4 py-3 text-sm font-medium shadow-lift ${t.type === 'error' ? 'bg-red-600 text-white' : 'border-l-4 border-night-900 bg-ink-900 text-white'}`}>
             {t.msg}
           </div>
         ))}
@@ -105,7 +105,7 @@ const STATUS_COLORS = {
   available: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200', ready: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200',
   inspected: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200', occupied: 'bg-night-900 text-white', reserved: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
   dirty: 'bg-amber-50 text-amber-600 ring-1 ring-amber-100', cleaning: 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200',
-  out_of_order: 'bg-red-50 text-red-700 ring-1 ring-red-200',
+  out_of_order: 'bg-ink-800 text-white',
   tentative: 'bg-amber-50 text-amber-600', requested: 'bg-amber-50 text-amber-600', confirmed: 'bg-brand-50 text-brand-700',
   checked_in: 'bg-night-900 text-white', checked_out: 'bg-ink-100 text-ink-500', cancelled: 'bg-red-50 text-red-600', no_show: 'bg-red-50 text-red-600',
   open: 'bg-amber-50 text-amber-600', closed: 'bg-ink-100 text-ink-600', pending: 'bg-amber-50 text-amber-600', in_progress: 'bg-sky-50 text-sky-700',
@@ -138,7 +138,7 @@ export function Tabs({ tabs, value, onChange }) {
     <div className="mb-4 flex gap-1 overflow-x-auto border-b border-ink-100">
       {tabs.map(([k, l]) => (
         <button key={k} onClick={() => onChange(k)}
-          className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-semibold ${value === k ? 'border-amber-400 text-ink-900' : 'border-transparent text-ink-500 hover:text-ink-800'}`}>
+          className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-semibold ${value === k ? 'border-night-900 text-night-900' : 'border-transparent text-ink-500 hover:text-ink-800'}`}>
           {l}
         </button>
       ))}

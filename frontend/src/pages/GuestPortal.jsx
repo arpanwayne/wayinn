@@ -72,13 +72,13 @@ export default function GuestPortal() {
   return (
     <div className="mx-auto min-h-screen max-w-md bg-ink-50 pb-28">
       <header className="bg-night-900 px-5 pb-6 pt-8 text-white">
-        <div className="text-sm font-medium text-amber-300">{info.hotel.name}</div>
+        <div className="text-sm font-medium text-white/80">{info.hotel.name}</div>
         <div className="mt-1 font-display text-3xl font-bold">Room {info.room.number}</div>
-        <div className="mt-1 text-sm text-night-200">{me ? `Hi ${me.guest_name.split(' ')[0]} · checkout ${fmtDate(me.check_out)} by ${me.checkout_time?.slice(0, 5)}` : info.occupied ? 'Order food to your room, request service or view your bill' : 'This room has no active stay'}</div>
+        <div className="mt-1 text-sm text-night-100">{me ? `Hi ${me.guest_name.split(' ')[0]} · checkout ${fmtDate(me.check_out)} by ${me.checkout_time?.slice(0, 5)}` : info.occupied ? 'Order food to your room, request service or view your bill' : 'This room has no active stay'}</div>
       </header>
       <nav className="sticky top-0 z-10 grid grid-cols-4 border-b border-ink-100 bg-white text-sm font-semibold">
         {[['menu', 'Menu'], ['requests', 'Requests'], ['orders', 'Orders'], ['bill', 'My stay']].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`py-3 ${tab === k ? 'border-b-2 border-brand-600 text-brand-700' : 'text-ink-500'}`}>{l}</button>
+          <button key={k} onClick={() => setTab(k)} className={`py-3 ${tab === k ? 'border-b-2 border-night-900 text-night-900' : 'text-ink-500'}`}>{l}</button>
         ))}
       </nav>
       {msg && <div className="mx-4 mt-3 rounded-lg bg-ink-900 px-4 py-3 text-sm text-white">{msg}</div>}
