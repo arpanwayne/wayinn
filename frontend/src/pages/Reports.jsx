@@ -175,7 +175,7 @@ export default function Reports() {
       {tab === 'outstanding' && (
         <div className="card overflow-x-auto">
           {!outst.data?.length ? <Empty>No outstanding balances</Empty> : <table className="table"><tbody>{outst.data.map((o) => (
-            <tr key={o.folio_id}><td><Link to={`/folios/${o.folio_id}`} className="font-semibold text-brand-700 hover:underline">{o.guest || `Bill #${o.folio_id}`}</Link><div className="text-xs text-ink-500">{o.phone} {o.booking_ref}</div></td>
+            <tr key={o.folio_id}><td><Link to={`/folios/${o.folio_id}`} className="link">{o.guest || `Bill #${o.folio_id}`}</Link><div className="text-xs text-ink-500">{o.phone} {o.booking_ref}</div></td>
               <td>{o.room ? `Room ${o.room}` : label(o.kind)}</td><td>{o.stay_status && <Badge status={o.stay_status} />}</td>
               <td className={`text-right font-semibold tabular-nums ${o.balance_paise > 0 ? 'text-red-600' : 'text-brand-700'}`}>{o.balance_paise > 0 ? rupees(o.balance_paise) : `${rupees(-o.balance_paise)} credit`}</td></tr>
           ))}</tbody></table>}

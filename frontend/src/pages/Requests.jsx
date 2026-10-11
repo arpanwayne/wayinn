@@ -15,7 +15,7 @@ export default function Requests() {
         {!data.length ? <Empty>No requests in the last 24 hours</Empty> : (
           <table className="table"><tbody>{data.map((r) => (
             <tr key={r.id}>
-              <td className="w-16 text-lg font-bold">{r.room_number}</td>
+              <td className="num w-16 text-lg">{r.room_number}</td>
               <td><div className="font-semibold">{label(r.type)}</div>{r.message && <div className="text-sm text-ink-600">{r.message}</div>}<div className="text-xs text-ink-400">{r.guest_name} · {ago(r.created_at)}</div></td>
               <td><Badge status={r.status} /></td>
               <td className="whitespace-nowrap text-right">

@@ -37,7 +37,7 @@ export default function Housekeeping() {
           {(tab === 'tasks' ? open : tab === 'mine' ? mine : done).map((t) => (
             <div key={t.id} className="card p-4">
               <div className="flex items-start justify-between">
-                <div><div className="text-xl font-bold">{t.room_number}</div><div className="text-sm">{label(t.task_type)} <span className="text-ink-400">· {label(t.trigger)}</span></div></div>
+                <div><div className="num text-xl">{t.room_number}</div><div className="text-sm">{label(t.task_type)} <span className="text-ink-400">· {label(t.trigger)}</span></div></div>
                 <div className="flex flex-col items-end gap-1"><Badge status={t.priority} /><Badge status={t.status} /></div>
               </div>
               {t.notes && <div className="mt-2 rounded bg-ink-50 px-2 py-1 text-sm">{t.notes}</div>}
@@ -67,7 +67,7 @@ export default function Housekeeping() {
               <div className="font-bold">{r.number}</div>
               <Badge status={r.hk_status} />
               {r.stay_id && <div className="mt-1 text-[10px] text-ink-500">Occupied{r.due_out ? ' · due out' : ''}</div>}
-              {r.arriving_stay_id && <div className="mt-1 text-[10px] text-violet-700">Arrival today</div>}
+              {r.arriving_stay_id && <div className="mt-1 text-[10px] text-night-900">Arrival today</div>}
             </div>
           ))}
         </div>

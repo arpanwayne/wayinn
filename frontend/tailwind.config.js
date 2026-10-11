@@ -14,7 +14,9 @@ export default {
         brand: { 50: '#e8f9f2', 100: '#c8f0e0', 200: '#96e0c4', 300: '#5acaa4', 400: '#2ab088', 500: '#0f9471', 600: '#0b7a5d', 700: '#0a654e', 800: '#0b4f3f', 900: '#0a4135' },
         // Wine: the brand colour — hero panels, primary buttons, active states
         night: { 50: '#fbf1f3', 100: '#f6e1e5', 200: '#eecbd2', 300: '#e0a5b0', 400: '#cf7d8c', 600: '#a8233a', 700: '#741425', 800: '#821829', 900: '#8e1b2f', 950: '#4f0d19' },
-        // Yellow: highlights on red, and warnings
+        // Alert red, tuned to sit next to wine (a little brighter so warnings still stand out)
+        red: { 50: '#fdf2f3', 100: '#fbe2e4', 200: '#f6c5c9', 300: '#ee9aa1', 400: '#e0606b', 500: '#cf3847', 600: '#bb2233', 700: '#9c1b29', 800: '#7d1722' },
+        // Yellow: highlights on wine, and warnings
         amber: { 50: '#fff8eb', 100: '#feeac6', 200: '#fdd98f', 300: '#fbc457', 400: '#f6a723', 500: '#e48a0c', 600: '#c26908' },
       },
       boxShadow: {

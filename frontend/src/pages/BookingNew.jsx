@@ -120,7 +120,7 @@ export default function BookingNew() {
           <div className="card p-4">
             <h2 className="mb-3">Guest</h2>
             {existing ? (
-              <div className="flex items-center justify-between rounded-lg bg-brand-50 px-3 py-2">
+              <div className="flex items-center justify-between rounded-xl bg-night-50 px-3 py-2 ring-1 ring-inset ring-night-200">
                 <div><div className="font-semibold">{existing.full_name}</div><div className="text-xs text-ink-500">{existing.phone} · {existing.stay_count} previous stays</div></div>
                 <button type="button" className="btn-ghost btn-sm" onClick={() => setExisting(null)}>Change</button>
               </div>

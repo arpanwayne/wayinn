@@ -86,8 +86,8 @@ export default function GuestPortal() {
       {tab === 'menu' && (
         <div className="p-4">
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button onClick={() => setCat('all')} className={`badge shrink-0 px-3 py-1.5 ${cat === 'all' ? 'bg-ink-800 text-white' : 'bg-white ring-1 ring-ink-200'}`}>All</button>
-            {info.menu.categories.map((c) => <button key={c.id} onClick={() => setCat(String(c.id))} className={`badge shrink-0 px-3 py-1.5 ${cat === String(c.id) ? 'bg-ink-800 text-white' : 'bg-white ring-1 ring-ink-200'}`}>{c.name}</button>)}
+            <button onClick={() => setCat('all')} className={`chip ${cat === 'all' ? 'chip-on' : ''}`}>All</button>
+            {info.menu.categories.map((c) => <button key={c.id} onClick={() => setCat(String(c.id))} className={`chip ${cat === String(c.id) ? 'chip-on' : ''}`}>{c.name}</button>)}
           </div>
           <div className="space-y-2">
             {items.map((i) => (
@@ -127,7 +127,7 @@ export default function GuestPortal() {
           {!authed ? <>
             {placed.map((o) => (
               <div key={o.id} className="card p-3">
-                <div className="flex justify-between"><span className="font-semibold">{o.order_no}</span><span className="badge bg-brand-50 text-brand-700">{o.status === 'received' ? 'Waiting' : 'Sent to kitchen'}</span></div>
+                <div className="flex justify-between"><span className="font-semibold">{o.order_no}</span><span className="badge bg-night-50 text-night-900">{o.status === 'received' ? 'Waiting' : 'Sent to kitchen'}</span></div>
                 <div className="text-sm text-ink-600">{o.items}</div>
                 <div className="mt-1 flex justify-between text-xs text-ink-400"><span>{ago(o.at)}</span><span>{rupees(o.total_paise)} · on your room bill</span></div>
               </div>
@@ -135,7 +135,7 @@ export default function GuestPortal() {
             <VerifyPrompt onClick={() => setVerifyOpen(true)} text="To see all your orders and their status, please confirm your stay." />
           </> : !orders.length ? <div className="py-10 text-center text-sm text-ink-400">No orders yet</div> : orders.map((o) => (
             <div key={o.id} className="card p-3">
-              <div className="flex justify-between"><span className="font-semibold">{o.order_no}</span><span className="badge bg-brand-50 text-brand-700">{label(o.status)}</span></div>
+              <div className="flex justify-between"><span className="font-semibold">{o.order_no}</span><span className="badge bg-night-50 text-night-900">{label(o.status)}</span></div>
               <div className="text-sm text-ink-600">{o.items?.map((i) => `${i.quantity}× ${i.name}`).join(', ')}</div>
               <div className="mt-1 flex justify-between text-xs text-ink-400"><span>{ago(o.created_at)}</span><span>{rupees(o.total_paise)}</span></div>
             </div>
@@ -190,7 +190,7 @@ export default function GuestPortal() {
       {verifyOpen && (
         <div className="fixed inset-0 z-20 flex items-end bg-ink-900/40" onClick={() => setVerifyOpen(false)}>
           <div className="mx-auto w-full max-w-md rounded-t-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="text-lg font-bold">Confirm it's you</div>
+            <div className="font-display text-lg font-bold">Confirm it's you</div>
             <p className="mb-3 text-sm text-ink-500">Enter the 4-digit PIN from reception, or the last 4 digits of the phone number on your booking.</p>
             <input className="input text-center text-2xl tracking-[0.5em]" inputMode="numeric" maxLength={4} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} autoFocus />
             <button className="btn-primary mt-3 w-full py-3" disabled={busy || code.length < 4} onClick={verify}>Continue</button>

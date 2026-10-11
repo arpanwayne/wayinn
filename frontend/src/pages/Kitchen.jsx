@@ -13,7 +13,7 @@ function KotCard({ k, onDelivered, busy }) {
   const late = mins > 20;
   return (
     <div className={`card overflow-hidden ${late ? 'ring-2 ring-red-400' : ''}`}>
-      <div className={`flex items-center justify-between px-4 py-2.5 text-base font-bold ${k.order_type === 'room_service' ? 'bg-violet-100' : k.order_type === 'takeaway' ? 'bg-amber-100' : 'bg-ink-100'}`}>
+      <div className={`flex items-center justify-between px-4 py-2.5 text-base font-bold ${k.order_type === 'room_service' ? 'bg-night-100 text-night-900' : k.order_type === 'takeaway' ? 'bg-amber-100' : 'bg-ink-100'}`}>
         <span>{where(k)}</span>
         <span className={late ? 'text-red-600' : 'text-ink-500'}>{mins}m</span>
       </div>

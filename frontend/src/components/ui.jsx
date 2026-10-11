@@ -91,7 +91,7 @@ export function PageHeader({ title, subtitle, actions }) {
 }
 
 export function Stat({ label: l, value, sub, tone = 'default' }) {
-  const tones = { default: 'text-ink-900', good: 'text-brand-700', warn: 'text-amber-600', bad: 'text-red-600' };
+  const tones = { default: 'text-ink-900', good: 'text-ink-900', warn: 'text-amber-600', bad: 'text-red-600' };
   return (
     <div className="card px-4 py-3.5">
       <div className="text-[13px] font-medium text-ink-500">{l}</div>
@@ -101,20 +101,24 @@ export function Stat({ label: l, value, sub, tone = 'default' }) {
   );
 }
 
+// One palette for every status in the product:
+// wine = live / in progress, green = good, amber = needs attention, black or grey = stopped / closed.
+const WINE = 'bg-night-50 text-night-900 ring-1 ring-inset ring-night-200';
+const WINE_SOLID = 'bg-night-900 text-white';
+const GOOD = 'bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-200';
+const WARN = 'bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200';
+const MUTED = 'bg-ink-100 text-ink-600';
+const OFF = 'bg-white text-ink-500 ring-1 ring-inset ring-ink-300';
+const STOP = 'bg-ink-900 text-white';
 const STATUS_COLORS = {
-  available: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200', ready: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200',
-  inspected: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200', occupied: 'bg-night-900 text-white', reserved: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
-  dirty: 'bg-amber-50 text-amber-600 ring-1 ring-amber-100', cleaning: 'bg-yellow-50 text-yellow-700 ring-1 ring-yellow-200',
-  out_of_order: 'bg-ink-800 text-white',
-  tentative: 'bg-amber-50 text-amber-600', requested: 'bg-amber-50 text-amber-600', confirmed: 'bg-brand-50 text-brand-700',
-  checked_in: 'bg-night-900 text-white', checked_out: 'bg-ink-100 text-ink-500', cancelled: 'bg-red-50 text-red-600', no_show: 'bg-red-50 text-red-600',
-  open: 'bg-amber-50 text-amber-600', closed: 'bg-ink-100 text-ink-600', pending: 'bg-amber-50 text-amber-600', in_progress: 'bg-sky-50 text-sky-700',
-  done: 'bg-brand-50 text-brand-700', resolved: 'bg-brand-50 text-brand-700', acknowledged: 'bg-sky-50 text-sky-700',
-  received: 'bg-amber-50 text-amber-600', accepted: 'bg-sky-50 text-sky-700', preparing: 'bg-yellow-50 text-yellow-700',
-  out_for_delivery: 'bg-violet-50 text-violet-700', delivered: 'bg-brand-50 text-brand-700',
-  unsettled: 'bg-amber-50 text-amber-600', room_posted: 'bg-violet-50 text-violet-700', paid: 'bg-brand-50 text-brand-700', complimentary: 'bg-pink-50 text-pink-700',
-  urgent: 'bg-red-600 text-white', high: 'bg-red-50 text-red-700', normal: 'bg-ink-100 text-ink-600', low: 'bg-ink-50 text-ink-400',
-  trial: 'bg-amber-50 text-amber-600', active: 'bg-brand-50 text-brand-700', past_due: 'bg-red-50 text-red-600', suspended: 'bg-red-600 text-white',
+  available: GOOD, ready: GOOD, inspected: GOOD, confirmed: GOOD, done: GOOD, resolved: GOOD, delivered: GOOD, paid: GOOD, active: GOOD,
+  occupied: WINE_SOLID, checked_in: WINE_SOLID,
+  reserved: WINE, in_progress: WINE, acknowledged: WINE, accepted: WINE, preparing: WINE, out_for_delivery: WINE, room_posted: WINE, complimentary: WINE,
+  dirty: WARN, cleaning: WARN, tentative: WARN, requested: WARN, open: WARN, pending: WARN, received: WARN, unsettled: WARN, trial: WARN,
+  high: 'bg-amber-400 text-ink-900', past_due: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
+  checked_out: MUTED, closed: MUTED, normal: MUTED, low: 'bg-ink-50 text-ink-400',
+  cancelled: OFF, no_show: OFF,
+  out_of_order: STOP, urgent: STOP, suspended: STOP,
 };
 export function Badge({ status, children }) {
   return <span className={`badge ${STATUS_COLORS[status] || 'bg-ink-100 text-ink-600'}`}>{children || label(status)}</span>;

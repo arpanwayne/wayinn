@@ -39,11 +39,11 @@ export default function Folio() {
         </>} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="card px-4 py-3"><div className="label">Charges (incl. tax)</div><div className="text-xl font-bold tabular-nums">{rupees(t.total_paise)}</div></div>
-        <div className="card px-4 py-3"><div className="label">Paid</div><div className="text-xl font-bold tabular-nums text-brand-700">{rupees(t.paid_paise)}</div></div>
-        <div className="card px-4 py-3"><div className="label">Refunded</div><div className="text-xl font-bold tabular-nums">{rupees(t.refunded_paise)}</div></div>
+        <div className="card px-4 py-3"><div className="label">Charges (incl. tax)</div><div className="num text-xl">{rupees(t.total_paise)}</div></div>
+        <div className="card px-4 py-3"><div className="label">Paid</div><div className="num text-xl text-brand-700">{rupees(t.paid_paise)}</div></div>
+        <div className="card px-4 py-3"><div className="label">Refunded</div><div className="num text-xl">{rupees(t.refunded_paise)}</div></div>
         <div className="card px-4 py-3"><div className="label">{t.balance_paise >= 0 ? 'Balance due' : 'Credit to guest'}</div>
-          <div className={`text-xl font-bold tabular-nums ${t.balance_paise > 0 ? 'text-red-600' : ''}`}>{rupees(Math.abs(t.balance_paise))}</div></div>
+          <div className={`num text-xl ${t.balance_paise > 0 ? 'text-red-600' : ''}`}>{rupees(Math.abs(t.balance_paise))}</div></div>
       </div>
 
       <div className="flex flex-wrap gap-2">

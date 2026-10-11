@@ -40,7 +40,7 @@ export default function PublicBooking() {
     <div className="min-h-screen">
       <header className="bg-night-900 px-4 py-10 text-white">
         <div className="mx-auto max-w-4xl">
-          <h1 className="text-3xl font-extrabold">{hotel.name}</h1>
+          <h1 className="font-display text-4xl font-bold tracking-tight">{hotel.name}</h1>
           <p className="mt-1 text-night-100">{[hotel.address, hotel.city].filter(Boolean).join(', ')}</p>
           <p className="text-sm text-night-100">Check-in {hotel.checkin_time.slice(0, 5)} · Check-out {hotel.checkout_time.slice(0, 5)} {hotel.phone && `· ${hotel.phone}`}</p>
         </div>
@@ -64,8 +64,8 @@ export default function PublicBooking() {
               {!avail ? <div className="text-ink-400">Checking availability…</div> : avail.map((a) => {
                 const t = types[a.id];
                 return (
-                  <button key={a.id} disabled={!a.available} onClick={() => setSel(a)} className={`card p-4 text-left transition ${sel?.id === a.id ? 'ring-2 ring-brand-600' : ''} disabled:opacity-50`}>
-                    <div className="flex items-start justify-between"><div className="text-lg font-bold">{a.name}</div><div className="text-right"><div className="font-bold">{rupees0(a.base_rate_paise)}</div><div className="text-xs text-ink-500">per night + GST</div></div></div>
+                  <button key={a.id} disabled={!a.available} onClick={() => setSel(a)} className={`card p-4 text-left transition ${sel?.id === a.id ? 'ring-2 ring-night-900' : ''} disabled:opacity-50`}>
+                    <div className="flex items-start justify-between"><div className="font-display text-lg font-bold">{a.name}</div><div className="text-right"><div className="font-bold">{rupees0(a.base_rate_paise)}</div><div className="text-xs text-ink-500">per night + GST</div></div></div>
                     {t?.description && <p className="mt-1 text-sm text-ink-600">{t.description}</p>}
                     <div className="mt-2 text-xs text-ink-500">Up to {a.max_occupancy} guests · {t?.amenities.join(' · ')}</div>
                     <div className={`mt-2 text-xs font-semibold ${a.available ? 'text-brand-700' : 'text-red-600'}`}>{a.available ? (a.available < 3 ? `Only ${a.available} left` : 'Available') : 'Sold out'}</div>
