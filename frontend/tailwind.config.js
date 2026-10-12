@@ -3,11 +3,25 @@ export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
-      fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'] },
+      fontFamily: {
+        sans: ['"Figtree Variable"', 'system-ui', 'sans-serif'],
+        display: ['"Bricolage Grotesque Variable"', '"Figtree Variable"', 'system-ui', 'sans-serif'],
+      },
       colors: {
-        ink: { 50: '#f4f6f6', 100: '#e3e8e8', 200: '#c6d0d0', 300: '#9aabab', 400: '#6b8282', 500: '#4d6464', 600: '#3a4f4f', 700: '#2c3d3d', 800: '#1d2a2a', 900: '#111a1a' },
-        brand: { 50: '#eefaf6', 100: '#d4f2e8', 200: '#a9e4d1', 300: '#72cfb4', 400: '#3fb495', 500: '#1f977a', 600: '#147a63', 700: '#126151', 800: '#124e42', 900: '#114137' },
-        amber: { 50: '#fff8eb', 100: '#feeac6', 400: '#f6a723', 500: '#e48a0c', 600: '#c26908' },
+        // Clean neutrals: text, borders, page background
+        ink: { 50: '#f7f7f8', 100: '#ececee', 200: '#dcdce0', 300: '#b4b4bb', 400: '#85858f', 500: '#62626c', 600: '#47474f', 700: '#33333a', 800: '#222227', 900: '#141417' },
+        // Green is kept only for "all good" states (available, paid, done)
+        brand: { 50: '#e8f9f2', 100: '#c8f0e0', 200: '#96e0c4', 300: '#5acaa4', 400: '#2ab088', 500: '#0f9471', 600: '#0b7a5d', 700: '#0a654e', 800: '#0b4f3f', 900: '#0a4135' },
+        // Wine: the brand colour — hero panels, primary buttons, active states
+        night: { 50: '#fbf1f3', 100: '#f6e1e5', 200: '#eecbd2', 300: '#e0a5b0', 400: '#cf7d8c', 600: '#a8233a', 700: '#741425', 800: '#821829', 900: '#8e1b2f', 950: '#4f0d19' },
+        // Alert red, tuned to sit next to wine (a little brighter so warnings still stand out)
+        red: { 50: '#fdf2f3', 100: '#fbe2e4', 200: '#f6c5c9', 300: '#ee9aa1', 400: '#e0606b', 500: '#cf3847', 600: '#bb2233', 700: '#9c1b29', 800: '#7d1722' },
+        // Yellow: highlights on wine, and warnings
+        amber: { 50: '#fff8eb', 100: '#feeac6', 200: '#fdd98f', 300: '#fbc457', 400: '#f6a723', 500: '#e48a0c', 600: '#c26908' },
+      },
+      boxShadow: {
+        card: '0 1px 2px rgba(20,20,23,.05), 0 10px 28px -16px rgba(20,20,23,.16)',
+        lift: '0 2px 4px rgba(20,20,23,.06), 0 18px 40px -18px rgba(142,27,47,.45)',
       },
     },
   },

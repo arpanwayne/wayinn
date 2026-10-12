@@ -17,19 +17,26 @@ export default function Login() {
   };
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="hidden flex-col justify-between bg-brand-900 p-10 text-brand-100 lg:flex">
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-night-900 p-12 text-night-100 lg:flex">
+        <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-white/25 blur-3xl" />
         <Logo light />
-        <div>
-          <p className="text-3xl font-bold leading-tight text-white">Rooms, restaurant, housekeeping and billing — one screen for your whole hotel.</p>
-          <p className="mt-4 max-w-md text-brand-200">Built for independent hotels up to 50 rooms by Wayne E Solutions.</p>
+        <div className="relative">
+          {/* A key rack: the oldest dashboard a hotel has */}
+          <div className="mb-10 grid w-72 grid-cols-6 gap-2" aria-hidden="true">
+            {[1, 1, 0, 1, 2, 1, 0, 1, 1, 1, 0, 3, 1, 0, 1, 1, 1, 0].map((s, i) => (
+              <span key={i} className={`h-9 rounded-lg ${s === 1 ? 'bg-white' : s === 2 ? 'bg-amber-300' : s === 3 ? 'bg-ink-900' : 'ring-1 ring-inset ring-white/50'}`} />
+            ))}
+          </div>
+          <p className="font-display text-[2.6rem] font-bold leading-[1.05] tracking-tight text-white">Every room, every bill, every order. One screen.</p>
+          <p className="mt-5 max-w-md text-night-100">For independent hotels up to 50 rooms. Front desk, restaurant, housekeeping and billing work from the same live picture.</p>
         </div>
-        <p className="text-xs text-brand-300">© Wayne E Solutions</p>
+        <p className="text-xs text-night-200">Wayne E Solutions</p>
       </div>
       <div className="flex items-center justify-center p-6">
         <form onSubmit={submit} className="w-full max-w-sm space-y-4">
           <div className="lg:hidden"><Logo /></div>
           <div>
-            <h1 className="text-2xl">Sign in</h1>
+            <h1 className="text-3xl">Sign in</h1>
             <p className="text-sm text-ink-500">Use the account your hotel admin created for you.</p>
           </div>
           <label className="block"><span className="label">Email</span>

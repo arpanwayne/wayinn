@@ -4,7 +4,7 @@ import { useApi } from '../lib/hooks.js';
 import { addDays, todayStr, nights, fmtDate } from '../lib/format.js';
 import { PageHeader, Loading, Badge } from '../components/ui.jsx';
 
-const COLORS = { reserved: 'bg-violet-500', checked_in: 'bg-brand-700', checked_out: 'bg-ink-300', tentative: 'bg-amber-400' };
+const COLORS = { reserved: 'bg-night-100 text-night-900 ring-1 ring-inset ring-night-300', checked_in: 'bg-night-900 text-white', checked_out: 'bg-ink-200 text-ink-600', tentative: 'bg-amber-300 text-ink-900' };
 
 export default function Calendar() {
   const [from, setFrom] = useState(todayStr());
@@ -35,7 +35,7 @@ export default function Calendar() {
                 const dt = new Date(d + 'T00:00:00');
                 const wk = dt.getDay() === 0 || dt.getDay() === 6;
                 return (
-                  <div key={d} style={{ width: CELL }} className={`shrink-0 border-l border-ink-50 py-2 text-center ${d === todayStr() ? 'bg-amber-50 font-bold text-amber-600' : wk ? 'bg-ink-50 text-ink-500' : 'text-ink-500'}`}>
+                  <div key={d} style={{ width: CELL }} className={`shrink-0 border-l border-ink-50 py-2 text-center ${d === todayStr() ? 'bg-night-900 font-bold text-white' : wk ? 'bg-ink-50 text-ink-500' : 'text-ink-500'}`}>
                     <div>{dt.toLocaleDateString('en-IN', { weekday: 'short' })}</div><div className="font-semibold">{dt.getDate()}</div>
                   </div>
                 );
@@ -47,7 +47,7 @@ export default function Calendar() {
               return (
                 <div key={room.id}>
                   {(!prev || prev.room_type_id !== room.room_type_id) && (
-                    <div className="border-b border-ink-100 bg-ink-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-ink-400">{room.room_type}</div>
+                    <div className="border-b border-ink-100 bg-ink-50 px-3 py-1 text-[11px] font-semibold tracking-wide text-ink-400">{room.room_type}</div>
                   )}
                   <div className="relative flex h-10 border-b border-ink-50">
                     <div className="flex w-[140px] shrink-0 items-center gap-2 px-3 text-sm font-semibold">
@@ -55,7 +55,7 @@ export default function Calendar() {
                     </div>
                     {days.map((d) => (
                       <button key={d} style={{ width: CELL }} title={`Book ${room.number} on ${d}`}
-                        className="shrink-0 border-l border-ink-50 hover:bg-brand-50"
+                        className="shrink-0 border-l border-ink-50 hover:bg-night-50"
                         onClick={() => nav(`/bookings/new?room_id=${room.id}&room_type_id=${room.room_type_id}&from=${d}&to=${addDays(d, 1)}`)} />
                     ))}
                     {stays.map((s) => {
@@ -66,7 +66,7 @@ export default function Calendar() {
                       return (
                         <Link key={s.id} to={`/bookings/${s.booking_id}`} title={`${s.guest_name} · ${s.ref} · ${fmtDate(s.check_in_date)}–${fmtDate(s.check_out_date)}`}
                           style={{ left: s.check_in_date < from ? 140 : left, width: s.check_in_date < from ? width + CELL / 2 : width }}
-                          className={`absolute top-1.5 flex h-7 items-center overflow-hidden rounded-md px-2 text-xs font-semibold text-white shadow-sm ${COLORS[s.status] || 'bg-ink-400'}`}>
+                          className={`absolute top-1.5 flex h-7 items-center overflow-hidden rounded-lg px-2 text-xs font-semibold shadow-sm ${COLORS[s.status] || 'bg-ink-400 text-white'}`}>
                           <span className="truncate">{s.guest_name}</span>
                         </Link>
                       );

@@ -12,17 +12,17 @@ export default function InvoicePrint() {
   const h = inv.hotel;
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-ink-900">
-      <div className="no-print mb-4 flex justify-end gap-2"><button className="btn-primary" onClick={() => window.print()}>Print</button></div>
-      <div className="flex justify-between border-b-2 border-ink-900 pb-4">
+      <div className="no-print mb-4 flex justify-end gap-2"><span className="self-center text-xs text-ink-500">To download, choose “Save as PDF” as the printer.</span><button className="btn-primary" onClick={() => window.print()}>Print / Save as PDF</button></div>
+      <div className="flex justify-between border-b-2 border-night-900 pb-4">
         <div>
-          <div className="text-2xl font-extrabold">{h.name}</div>
+          <div className="font-display text-2xl font-bold">{h.name}</div>
           {h.legal_name && <div>{h.legal_name}</div>}
           <div className="text-ink-600">{[h.address, h.city, h.state].filter(Boolean).join(', ')}</div>
           <div className="text-ink-600">{[h.phone, h.email].filter(Boolean).join(' · ')}</div>
           {h.gstin && <div className="font-semibold">GSTIN: {h.gstin}{h.state_code && ` · State code ${h.state_code}`}</div>}
         </div>
         <div className="text-right">
-          <div className="text-lg font-bold">{inv.type}</div>
+          <div className="font-display text-lg font-bold text-night-900">{inv.type}</div>
           {inv.invoice_no && <div>No. <b>{inv.invoice_no}</b></div>}
           <div>Date: {fmtDateLong(inv.invoiced_at || new Date().toISOString())}</div>
         </div>

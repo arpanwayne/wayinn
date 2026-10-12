@@ -6,15 +6,57 @@ import { useAuth } from '../lib/auth.jsx';
 import { rupees0, rupees, fmtDate, fmtDateTime, label, todayStr, addDays } from '../lib/format.js';
 import { PageHeader, Stat, Loading, Tabs, Empty, Badge, useAction } from '../components/ui.jsx';
 
-function Bars({ rows, value, fmt, color = 'bg-brand-600' }) {
+function Ring({ pct, label: l }) {
+  const r = 54; const circ = 2 * Math.PI * r;
+  return (
+    <div className="relative mx-auto h-40 w-40 shrink-0">
+      <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
+        <circle cx="64" cy="64" r={r} fill="none" strokeWidth="11" className="stroke-white/25" />
+        <circle cx="64" cy="64" r={r} fill="none" strokeWidth="11" strokeLinecap="round" className="stroke-white"
+          strokeDasharray={circ} strokeDashoffset={circ * (1 - Math.min(100, Number(pct) || 0) / 100)} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <div className="num text-4xl leading-none">{Math.round(Number(pct) || 0)}%</div>
+        <div className="mt-1 text-xs text-white">occupied</div>
+        <div className="text-[11px] text-night-100">{l}</div>
+      </div>
+    </div>
+  );
+}
+
+function SplitBar({ parts }) {
+  const total = parts.reduce((a, [, v]) => a + Math.max(0, Number(v) || 0), 0);
+  return (
+    <div className="mt-4 max-w-xl">
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-white/25">
+        {total > 0 && parts.map(([l, v, c]) => <div key={l} className={c} style={{ width: `${(Math.max(0, v) / total) * 100}%` }} />)}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-night-100">
+        {parts.map(([l, v, c]) => <span key={l} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${c}`} />{l} <span className="num text-white">{rupees0(v)}</span></span>)}
+      </div>
+    </div>
+  );
+}
+
+function HeroFact({ label: l, value, sub, bad }) {
+  return (
+    <div>
+      <div className="text-sm text-night-100">{l}</div>
+      <div className={`num mt-0.5 text-2xl ${bad ? 'text-amber-200' : 'text-white'}`}>{value}</div>
+      {sub && <div className="text-xs text-night-100">{sub}</div>}
+    </div>
+  );
+}
+
+function Bars({ rows, value, fmt, color = 'bg-night-900' }) {
   const max = Math.max(1, ...rows.map((r) => Number(r[value]) || 0));
   return (
     <div className="flex h-40 items-end gap-1">
       {rows.map((r) => (
         <div key={r.day} className="group relative flex flex-1 flex-col items-center justify-end">
-          <div className={`w-full rounded-t ${color}`} style={{ height: `${(Number(r[value]) / max) * 100}%`, minHeight: Number(r[value]) ? 2 : 0 }} />
+          <div className={`w-full rounded-t-md ${color}`} style={{ height: `${(Number(r[value]) / max) * 100}%`, minHeight: Number(r[value]) ? 2 : 0 }} />
           <div className="mt-1 text-[10px] text-ink-400">{new Date(r.day).getDate()}</div>
-          <div className="pointer-events-none absolute -top-7 hidden whitespace-nowrap rounded bg-ink-900 px-2 py-0.5 text-[11px] text-white group-hover:block">{fmtDate(r.day)}: {fmt(r[value])}</div>
+          <div className="pointer-events-none absolute -top-7 z-10 hidden whitespace-nowrap rounded-md bg-ink-900 px-2 py-0.5 text-[11px] text-white group-hover:block">{fmtDate(r.day)}: {fmt(r[value])}</div>
         </div>
       ))}
     </div>
@@ -42,32 +84,45 @@ export default function Reports() {
   const d = dash.data;
   if (!d) return <Loading />;
   const collToday = (d.collections_today || []).reduce((a, x) => a + Number(x.amount_paise), 0);
+  const revToday = d.revenue_today.room + d.revenue_today.food + d.revenue_today.other + d.revenue_today.discount;
   return (
     <div className="space-y-5">
       <PageHeader title="Owner dashboard" subtitle={`Today · ${fmtDate(d.today)}`}
         actions={can('folio.charge') && <button className="btn-secondary" disabled={busy} onClick={() => run(async () => {
           const r = await api.post('/night-audit'); return r;
         }, 'Night audit complete — room charges posted')}>Run night audit</button>} />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-        <Stat label="Occupancy" value={`${d.rooms.occupancy_pct}%`} sub={`${d.rooms.occupied} of ${d.rooms.total - d.rooms.out_of_order} rooms`} tone="good" />
-        <Stat label="Available" value={d.rooms.available} sub={`${d.rooms.out_of_order} out of order`} />
-        <Stat label="Arrivals" value={`${d.arrivals.done}/${d.arrivals.done + d.arrivals.pending}`} sub="checked in / expected" />
-        <Stat label="Departures" value={`${d.departures.done}/${d.departures.done + d.departures.pending}`} />
-        {fin && <Stat label="Revenue today" value={rupees0(d.revenue_today.room + d.revenue_today.food + d.revenue_today.other + d.revenue_today.discount)} sub={`Rooms ${rupees0(d.revenue_today.room)} · Food ${rupees0(d.revenue_today.food)}`} />}
-        {fin && <Stat label="Collected today" value={rupees0(collToday)} sub={(d.collections_today || []).map((c) => `${label(c.method)} ${rupees0(c.amount_paise)}`).join(' · ') || '—'} />}
-        {fin && <Stat label="Month to date" value={rupees0(d.revenue_month.total)} sub={`Rooms ${rupees0(d.revenue_month.room)}`} />}
-        {fin && <Stat label="Unpaid after checkout" value={rupees0(d.outstanding.amount_paise)} sub={`${d.outstanding.folios} bill(s) · in-house running ${rupees0(d.in_house_balance.amount_paise)}`} tone={d.outstanding.amount_paise > 0 ? 'bad' : 'default'} />}
-        {fin && <Stat label="Refunds today" value={rupees0(d.refunds_today.amount_paise)} sub={`${d.refunds_today.n} refund(s)`} />}
-        <Stat label="Restaurant" value={d.restaurant_today.orders} sub={`${d.restaurant_today.cancelled} cancelled · ${d.restaurant_today.active} active`} />
-        <Stat label="Housekeeping" value={d.housekeeping.pending} sub={`pending · ${d.housekeeping.done_24h} done (24h)`} tone={d.housekeeping.pending > 5 ? 'warn' : 'default'} />
-        <Stat label="Maintenance" value={d.maintenance.open} sub={`${d.maintenance.urgent} urgent`} tone={d.maintenance.urgent ? 'bad' : 'default'} />
+      <div className="hero">
+        <div className="relative z-10 grid gap-8 p-6 sm:p-8 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center">
+          <Ring pct={d.rooms.occupancy_pct} label={`${d.rooms.occupied} of ${d.rooms.total - d.rooms.out_of_order} rooms`} />
+          {fin ? (
+            <div>
+              <div className="text-night-100">Revenue today</div>
+              <div className="num mt-1 text-5xl leading-none sm:text-6xl">{rupees0(revToday)}</div>
+              <SplitBar parts={[['Rooms', d.revenue_today.room, 'bg-white'], ['Food', d.revenue_today.food, 'bg-amber-300'], ['Other', d.revenue_today.other, 'bg-ink-900']]} />
+              <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+                <HeroFact label="Collected today" value={rupees0(collToday)} sub={(d.collections_today || []).map((c) => `${label(c.method)} ${rupees0(c.amount_paise)}`).join(', ')} />
+                <HeroFact label="Month to date" value={rupees0(d.revenue_month.total)} sub={`Rooms ${rupees0(d.revenue_month.room)}`} />
+                <HeroFact label="Unpaid after checkout" value={rupees0(d.outstanding.amount_paise)} sub={`${d.outstanding.folios} bill(s)`} bad={d.outstanding.amount_paise > 0} />
+                <HeroFact label="In-house running bills" value={rupees0(d.in_house_balance.amount_paise)} sub={d.refunds_today.n ? `${d.refunds_today.n} refund(s) today, ${rupees0(d.refunds_today.amount_paise)}` : 'No refunds today'} />
+              </div>
+            </div>
+          ) : <div className="text-night-100">{d.rooms.available} rooms available, {d.rooms.out_of_order} out of order</div>}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Stat label="Available rooms" value={d.rooms.available} sub={`${d.rooms.out_of_order} out of order`} tone="good" />
+        <Stat label="Arrivals" value={`${d.arrivals.done}/${d.arrivals.done + d.arrivals.pending}`} sub="checked in of expected" />
+        <Stat label="Departures" value={`${d.departures.done}/${d.departures.done + d.departures.pending}`} sub="checked out of due" />
+        <Stat label="Food orders" value={d.restaurant_today.orders} sub={`${d.restaurant_today.active} in progress, ${d.restaurant_today.cancelled} cancelled`} />
+        <Stat label="Housekeeping pending" value={d.housekeeping.pending} sub={`${d.housekeeping.done_24h} done in 24h`} tone={d.housekeeping.pending > 5 ? 'warn' : 'default'} />
+        <Stat label="Maintenance open" value={d.maintenance.open} sub={`${d.maintenance.urgent} urgent`} tone={d.maintenance.urgent ? 'bad' : 'default'} />
       </div>
 
       {summary.data && (
         <div className="card p-4">
           <div className="mb-2 flex items-center justify-between"><h2>Daily summary</h2>
             <button className="btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(summary.data.text)}>Copy for WhatsApp</button></div>
-          <pre className="whitespace-pre-wrap font-sans text-sm text-ink-700">{summary.data.text}</pre>
+          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-700">{summary.data.text}</pre>
         </div>
       )}
 
@@ -84,7 +139,7 @@ export default function Reports() {
         <div className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2">
             <div className="card p-4"><h2 className="mb-3">Occupancy %</h2><Bars rows={daily.data} value="occupancy_pct" fmt={(v) => `${v}%`} /></div>
-            <div className="card p-4"><h2 className="mb-3">Room revenue</h2><Bars rows={daily.data} value="room_revenue_paise" fmt={rupees0} color="bg-amber-400" /></div>
+            <div className="card p-4"><h2 className="mb-3">Room revenue</h2><Bars rows={daily.data} value="room_revenue_paise" fmt={rupees0} color="bg-ink-800" /></div>
           </div>
           <div className="card overflow-x-auto">
             <div className="flex justify-end p-2"><button className="btn-ghost btn-sm" onClick={() => downloadCsv(`/reports/daily?${q}&format=csv`, `daily-${from}-${to}.csv`)}>Export CSV</button></div>
@@ -120,7 +175,7 @@ export default function Reports() {
       {tab === 'outstanding' && (
         <div className="card overflow-x-auto">
           {!outst.data?.length ? <Empty>No outstanding balances</Empty> : <table className="table"><tbody>{outst.data.map((o) => (
-            <tr key={o.folio_id}><td><Link to={`/folios/${o.folio_id}`} className="font-semibold text-brand-700 hover:underline">{o.guest || `Bill #${o.folio_id}`}</Link><div className="text-xs text-ink-500">{o.phone} {o.booking_ref}</div></td>
+            <tr key={o.folio_id}><td><Link to={`/folios/${o.folio_id}`} className="link">{o.guest || `Bill #${o.folio_id}`}</Link><div className="text-xs text-ink-500">{o.phone} {o.booking_ref}</div></td>
               <td>{o.room ? `Room ${o.room}` : label(o.kind)}</td><td>{o.stay_status && <Badge status={o.stay_status} />}</td>
               <td className={`text-right font-semibold tabular-nums ${o.balance_paise > 0 ? 'text-red-600' : 'text-brand-700'}`}>{o.balance_paise > 0 ? rupees(o.balance_paise) : `${rupees(-o.balance_paise)} credit`}</td></tr>
           ))}</tbody></table>}

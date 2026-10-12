@@ -200,13 +200,13 @@ function QrSheet() {
     <div>
       <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <button className="btn-primary" onClick={() => window.print()}>Print QR cards</button>
-        <span className="text-sm text-ink-500">Online booking page: <a className="text-brand-700 underline" href={bookUrl} target="_blank" rel="noreferrer">{bookUrl}</a></span>
+        <span className="text-sm text-ink-500">Online booking page: <a className="link underline" href={bookUrl} target="_blank" rel="noreferrer">{bookUrl}</a></span>
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {data.map((r) => (
           <div key={r.id} className="card break-inside-avoid p-4 text-center">
             <div className="text-xs font-semibold uppercase text-ink-400">{hotel.name}</div>
-            <div className="text-2xl font-extrabold">Room {r.number}</div>
+            <div className="num text-2xl">Room {r.number}</div>
             {imgs[r.id] && <img src={imgs[r.id]} alt={`QR for room ${r.number}`} className="mx-auto my-2 w-36" />}
             <div className="text-xs text-ink-600">Scan for room service, requests & your bill</div>
           </div>

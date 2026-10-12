@@ -50,7 +50,7 @@ export function CheckInDialog({ stay, open, onClose, onDone }) {
       {pin ? (
         <div className="space-y-2 text-center">
           <div className="text-sm text-ink-500">Give this PIN to the guest for the in-room QR portal</div>
-          <div className="text-4xl font-extrabold tracking-[0.3em] text-brand-700">{pin}</div>
+          <div className="num text-5xl tracking-[0.3em] text-night-900">{pin}</div>
           <div className="text-xs text-ink-400">They can also use the last 4 digits of their phone number.</div>
         </div>
       ) : (

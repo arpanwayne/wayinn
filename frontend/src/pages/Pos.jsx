@@ -21,11 +21,11 @@ function ItemPicker({ item, onAdd, onClose }) {
         <button className="btn-primary" onClick={() => onAdd({ menu_item_id: item.id, name: item.name, variant: variant || null, addons, quantity: qty, notes: notes || null, unit })}>Add · {rupees0(unit * qty)}</button></>}>
       <div className="space-y-4">
         {item.variants.length > 0 && <Field label="Option"><div className="flex flex-wrap gap-2">{item.variants.map((v) => (
-          <button key={v.name} type="button" onClick={() => setVariant(v.name)} className={`rounded-lg border px-3 py-2 text-sm ${variant === v.name ? 'border-brand-600 bg-brand-50 font-semibold' : 'border-ink-200'}`}>{v.name} · {rupees0(v.price_paise)}</button>
+          <button key={v.name} type="button" onClick={() => setVariant(v.name)} className={`rounded-lg border px-3 py-2 text-sm ${variant === v.name ? 'border-night-900 bg-night-50 text-night-900 font-semibold' : 'border-ink-200'}`}>{v.name} · {rupees0(v.price_paise)}</button>
         ))}</div></Field>}
         {item.addons.length > 0 && <Field label="Add-ons"><div className="flex flex-wrap gap-2">{item.addons.map((a) => (
           <button key={a.name} type="button" onClick={() => setAddons(addons.includes(a.name) ? addons.filter((x) => x !== a.name) : [...addons, a.name])}
-            className={`rounded-lg border px-3 py-2 text-sm ${addons.includes(a.name) ? 'border-brand-600 bg-brand-50 font-semibold' : 'border-ink-200'}`}>+ {a.name} · {rupees0(a.price_paise)}</button>
+            className={`rounded-lg border px-3 py-2 text-sm ${addons.includes(a.name) ? 'border-night-900 bg-night-50 text-night-900 font-semibold' : 'border-ink-200'}`}>+ {a.name} · {rupees0(a.price_paise)}</button>
         ))}</div></Field>}
         <div className="flex items-end gap-3">
           <Field label="Quantity"><div className="flex items-center gap-2">
@@ -131,24 +131,25 @@ export default function Pos() {
 
   return (
     <div>
-      <PageHeader title="Restaurant POS" actions={<Tabs tabs={[['new', addTo ? `Add to ${addTo.order_no}` : 'New order'], ['active', `Active orders (${orders.data?.length || 0})`]]} value={tab} onChange={setTab} />} />
+      <PageHeader title="Restaurant POS" />
+      <Tabs tabs={[['new', addTo ? `Add to ${addTo.order_no}` : 'New order'], ['active', `Active orders (${orders.data?.length || 0})`]]} value={tab} onChange={setTab} />
       {tab === 'new' ? (
         <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
           <div>
             <div className="mb-3 flex flex-wrap gap-2">
               <input className="input max-w-[200px]" placeholder="Search menu" value={search} onChange={(e) => setSearch(e.target.value)} />
-              <button className={`badge px-3 py-1.5 ${cat === 'all' ? 'bg-ink-800 text-white' : 'bg-white ring-1 ring-ink-200'}`} onClick={() => setCat('all')}>All</button>
+              <button className={`chip ${cat === 'all' ? 'chip-on' : ''}`} onClick={() => setCat('all')}>All</button>
               {menu.data.categories.filter((c) => c.active).map((c) => (
-                <button key={c.id} className={`badge px-3 py-1.5 ${cat === String(c.id) ? 'bg-ink-800 text-white' : 'bg-white ring-1 ring-ink-200'}`} onClick={() => setCat(String(c.id))}>{c.name}</button>
+                <button key={c.id} className={`chip ${cat === String(c.id) ? 'chip-on' : ''}`} onClick={() => setCat(String(c.id))}>{c.name}</button>
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
               {items.map((i) => (
                 <button key={i.id} disabled={!i.available} onClick={() => (i.variants.length || i.addons.length ? setPicking(i) : setCart([...cart, { menu_item_id: i.id, name: i.name, variant: null, addons: [], quantity: 1, unit: i.price_paise }]))}
-                  className="card flex h-24 flex-col justify-between p-3 text-left transition hover:border-brand-300 hover:shadow disabled:opacity-40">
+                  className="card flex h-24 flex-col justify-between p-3 text-left transition hover:border-night-300 hover:shadow-lift disabled:opacity-40">
                   <span className="flex items-start gap-1.5 text-sm font-semibold leading-tight">
                     {i.is_veg !== null && <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-sm border-2 ${i.is_veg ? 'border-green-600' : 'border-red-600'}`} />}{i.name}</span>
-                  <span className="text-sm text-ink-500">{i.available ? rupees0(i.variants[0]?.price_paise ?? i.price_paise) : 'Unavailable'}</span>
+                  <span className="num text-sm text-ink-700">{!i.available ? 'Unavailable' : i.variants.length ? i.variants.map((v) => rupees0(v.price_paise)).filter((x, n, a) => a.indexOf(x) === n).join(' / ') : rupees0(i.price_paise)}</span>
                 </button>
               ))}
             </div>
