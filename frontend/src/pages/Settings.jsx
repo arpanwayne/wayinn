@@ -21,7 +21,7 @@ function HotelProfile() {
       phone: f.phone, email: f.email, checkin_time: f.checkin_time.slice(0, 5), checkout_time: f.checkout_time.slice(0, 5), invoice_prefix: f.invoice_prefix,
       settings: {
         tax: { room_slabs: f.tax.room_slabs, food_rate: Number(f.tax.food_rate), service_rate: Number(f.tax.service_rate) },
-        qr_orders_require_accept: f.settings.qr_orders_require_accept !== false, qr_show_bill: f.settings.qr_show_bill !== false,
+        qr_orders_require_accept: f.settings.qr_orders_require_accept === true, qr_show_bill: f.settings.qr_show_bill !== false,
         discount_alert_pct: Number(f.settings.discount_alert_pct ?? 20), invoice_footer: f.settings.invoice_footer || '',
       },
     });
@@ -63,7 +63,7 @@ function HotelProfile() {
       </div>
       <div className="card space-y-2 p-4 text-sm">
         <h2 className="mb-1">Guest portal & controls</h2>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={f.settings.qr_orders_require_accept !== false} onChange={(e) => setS({ qr_orders_require_accept: e.target.checked })} /> Staff must accept QR food orders before they go to the kitchen</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={f.settings.qr_orders_require_accept === true} onChange={(e) => setS({ qr_orders_require_accept: e.target.checked })} /> Hold guest QR food orders until staff accept them (off = straight to the kitchen and onto the room bill)</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={f.settings.qr_show_bill !== false} onChange={(e) => setS({ qr_show_bill: e.target.checked })} /> Show the running bill to verified guests</label>
         <label className="flex items-center gap-2">Flag discounts above <input className="input w-20" value={f.settings.discount_alert_pct ?? 20} onChange={(e) => setS({ discount_alert_pct: e.target.value })} /> % to the owner</label>
       </div>
@@ -200,13 +200,13 @@ function QrSheet() {
     <div>
       <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <button className="btn-primary" onClick={() => window.print()}>Print QR cards</button>
-        <span className="text-sm text-ink-500">Online booking page: <a className="text-brand-700 underline" href={bookUrl} target="_blank" rel="noreferrer">{bookUrl}</a></span>
+        <span className="text-sm text-ink-500">Online booking page: <a className="link underline" href={bookUrl} target="_blank" rel="noreferrer">{bookUrl}</a></span>
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {data.map((r) => (
           <div key={r.id} className="card break-inside-avoid p-4 text-center">
             <div className="text-xs font-semibold uppercase text-ink-400">{hotel.name}</div>
-            <div className="text-2xl font-extrabold">Room {r.number}</div>
+            <div className="num text-2xl">Room {r.number}</div>
             {imgs[r.id] && <img src={imgs[r.id]} alt={`QR for room ${r.number}`} className="mx-auto my-2 w-36" />}
             <div className="text-xs text-ink-600">Scan for room service, requests & your bill</div>
           </div>

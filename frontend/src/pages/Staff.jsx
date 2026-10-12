@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { fmtDateTime, label } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, useAction } from '../components/ui.jsx';
 
-const ROLES = ['owner', 'manager', 'receptionist', 'cashier', 'restaurant', 'kitchen', 'housekeeping', 'maintenance'];
+const ROLES = ['owner', 'front_desk', 'kitchen'];
 
 export default function Staff() {
   const { user } = useAuth();
@@ -31,7 +31,7 @@ export default function Staff() {
   }, 'Staff saved');
   return (
     <div>
-      <PageHeader title="Staff & permissions" actions={<button className="btn-primary" onClick={() => setForm({ name: '', email: '', phone: '', role: 'receptionist', password: '', extra_permissions: [], revoked_permissions: [], active: true })}>+ Add staff</button>} />
+      <PageHeader title="Staff & permissions" actions={<button className="btn-primary" onClick={() => setForm({ name: '', email: '', phone: '', role: 'front_desk', password: '', extra_permissions: [], revoked_permissions: [], active: true })}>+ Add staff</button>} />
       <div className="card overflow-x-auto">
         <table className="table">
           <thead><tr><th>Name</th><th>Role</th><th>Last login</th><th>Status</th><th /></tr></thead>

@@ -27,13 +27,12 @@ async function main() {
       `INSERT INTO hotels (name, slug, legal_name, gstin, address, city, state, state_code, phone, email, plan_id, subscription_status, settings)
        VALUES ('Wayinn Demo Hotel','demo-hotel','Demo Hospitality Pvt Ltd','03ABCDE1234F1Z5','Ferozepur Road','Ludhiana','Punjab','03',
                '+91 98765 43210','frontdesk@demo-hotel.in',$1,'active',$2) RETURNING *`,
-      [plan.id, JSON.stringify({ qr_orders_require_accept: true, qr_show_bill: true, require_id_at_checkin: true, discount_alert_pct: 20 })]);
+      [plan.id, JSON.stringify({ qr_orders_require_accept: false, qr_show_bill: true, require_id_at_checkin: true, discount_alert_pct: 20 })]);
 
     const staff = [
-      ['Owner Demo', 'owner@demo-hotel.in', 'owner'], ['Manager Demo', 'manager@demo-hotel.in', 'manager'],
-      ['Reception Demo', 'reception@demo-hotel.in', 'receptionist'], ['Cashier Demo', 'cashier@demo-hotel.in', 'cashier'],
-      ['Restaurant Demo', 'restaurant@demo-hotel.in', 'restaurant'], ['Kitchen Demo', 'kitchen@demo-hotel.in', 'kitchen'],
-      ['Housekeeping Demo', 'hk@demo-hotel.in', 'housekeeping'], ['Maintenance Demo', 'maintenance@demo-hotel.in', 'maintenance'],
+      ['Owner Demo', 'owner@demo-hotel.in', 'owner'],
+      ['Front Desk Demo', 'frontdesk@demo-hotel.in', 'front_desk'],
+      ['Kitchen Demo', 'kitchen@demo-hotel.in', 'kitchen'],
     ];
     for (const [name, email, role] of staff) {
       await db.query(`INSERT INTO users (hotel_id, name, email, password_hash, role) VALUES ($1,$2,$3,$4,$5)`, [h.id, name, email, hash, role]);
@@ -82,7 +81,7 @@ async function main() {
     }
     console.log(`Seeded demo hotel id=${h.id}`);
   });
-  console.log(`\nLogins (password: ${PASSWORD})\n  Platform: admin@wayinn.app\n  Hotel:    owner@ / manager@ / reception@ / cashier@ / restaurant@ / kitchen@ / hk@ / maintenance@demo-hotel.in`);
+  console.log(`\nLogins (password: ${PASSWORD})\n  Platform: admin@wayinn.app\n  Hotel:    owner@ / frontdesk@ / kitchen@demo-hotel.in`);
   await pool.end();
 }
 main().catch((e) => { console.error(e); process.exit(1); });

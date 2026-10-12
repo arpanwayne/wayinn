@@ -19,7 +19,7 @@ export default function Billing() {
             <tbody>
               {data.map((f) => (
                 <tr key={f.id} className="hover:bg-ink-50">
-                  <td><Link to={`/folios/${f.id}`} className="font-semibold text-brand-700 hover:underline">{f.invoice_no || `#${f.id}`}</Link><div className="text-xs text-ink-500">{label(f.kind)} · {fmtDate(f.created_at)}</div></td>
+                  <td><Link to={`/folios/${f.id}`} className="link">{f.invoice_no || `#${f.id}`}</Link><div className="text-xs text-ink-500">{label(f.kind)} · {fmtDate(f.created_at)}</div></td>
                   <td>{f.guest_name || '—'}<div className="text-xs text-ink-500">{f.booking_ref}</div></td>
                   <td>{f.room_number || '—'}</td>
                   <td><Badge status={f.status} /> {f.stay_status && <Badge status={f.stay_status} />}</td>

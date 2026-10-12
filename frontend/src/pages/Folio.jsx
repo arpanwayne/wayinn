@@ -33,17 +33,17 @@ export default function Folio() {
         actions={<>
           <Badge status={f.status} />{f.invoice_no && <span className="badge bg-ink-800 text-white">{f.invoice_no}</span>}
           {f.booking_id && <Link to={`/bookings/${f.booking_id}`} className="btn-secondary">Booking</Link>}
-          <Link to={`/print/invoice/${f.id}`} target="_blank" className="btn-secondary">{f.status === 'closed' ? 'Print invoice' : 'Print interim bill'}</Link>
+          <Link to={`/print/invoice/${f.id}`} target="_blank" className="btn-secondary">{f.status === 'closed' ? 'Print / download invoice' : 'Print / download bill'}</Link>
           {open && can('invoice.issue') && t.balance_paise <= 0 && t.total_paise > 0 && f.stay_status !== 'checked_in' &&
             <button className="btn-primary" disabled={busy} onClick={() => done('Invoice issued')(() => api.post(`/folios/${id}/invoice`))}>Issue final invoice</button>}
         </>} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="card px-4 py-3"><div className="label">Charges (incl. tax)</div><div className="text-xl font-bold tabular-nums">{rupees(t.total_paise)}</div></div>
-        <div className="card px-4 py-3"><div className="label">Paid</div><div className="text-xl font-bold tabular-nums text-brand-700">{rupees(t.paid_paise)}</div></div>
-        <div className="card px-4 py-3"><div className="label">Refunded</div><div className="text-xl font-bold tabular-nums">{rupees(t.refunded_paise)}</div></div>
+        <div className="card px-4 py-3"><div className="label">Charges (incl. tax)</div><div className="num text-xl">{rupees(t.total_paise)}</div></div>
+        <div className="card px-4 py-3"><div className="label">Paid</div><div className="num text-xl text-brand-700">{rupees(t.paid_paise)}</div></div>
+        <div className="card px-4 py-3"><div className="label">Refunded</div><div className="num text-xl">{rupees(t.refunded_paise)}</div></div>
         <div className="card px-4 py-3"><div className="label">{t.balance_paise >= 0 ? 'Balance due' : 'Credit to guest'}</div>
-          <div className={`text-xl font-bold tabular-nums ${t.balance_paise > 0 ? 'text-red-600' : ''}`}>{rupees(Math.abs(t.balance_paise))}</div></div>
+          <div className={`num text-xl ${t.balance_paise > 0 ? 'text-red-600' : ''}`}>{rupees(Math.abs(t.balance_paise))}</div></div>
       </div>
 
       <div className="flex flex-wrap gap-2">

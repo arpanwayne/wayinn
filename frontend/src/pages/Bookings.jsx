@@ -28,7 +28,7 @@ export default function Bookings() {
             <tbody>
               {data.map((b) => (
                 <tr key={b.id} className="hover:bg-ink-50">
-                  <td><Link to={`/bookings/${b.id}`} className="font-semibold text-brand-700 hover:underline">{b.ref}</Link></td>
+                  <td><Link to={`/bookings/${b.id}`} className="link">{b.ref}</Link></td>
                   <td>{b.guest_name}<div className="text-xs text-ink-500">{b.guest_phone}</div></td>
                   <td className="whitespace-nowrap">{fmtDate(b.check_in_date)} → {fmtDate(b.check_out_date)}</td>
                   <td>{b.rooms || <span className="text-ink-400">{b.room_count} unassigned</span>}</td>

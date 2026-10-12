@@ -21,7 +21,7 @@ export default function Guests() {
             <thead><tr><th>Name</th><th>Phone</th><th>City</th><th>Stays</th><th>Last stay</th></tr></thead>
             <tbody>{data.map((g) => (
               <tr key={g.id} className="hover:bg-ink-50">
-                <td><Link to={`/guests/${g.id}`} className="font-semibold text-brand-700 hover:underline">{g.full_name}</Link>{g.company_name && <div className="text-xs text-ink-500">{g.company_name}</div>}</td>
+                <td><Link to={`/guests/${g.id}`} className="link">{g.full_name}</Link>{g.company_name && <div className="text-xs text-ink-500">{g.company_name}</div>}</td>
                 <td>{g.phone}</td><td>{g.city}</td><td>{g.stay_count}</td><td>{fmtDate(g.last_stay)}</td>
               </tr>
             ))}</tbody>

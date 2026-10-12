@@ -13,7 +13,7 @@ function PlatformLogin({ onDone }) {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ink-900 p-6">
+    <div className="flex min-h-screen items-center justify-center bg-night-900 p-6">
       <form className="card w-full max-w-sm space-y-4 p-6" onSubmit={async (e) => {
         e.preventDefault(); setErr('');
         try { const r = await api.post('/platform/auth/login', { email, password }, { scope: 'none' }); store.set('wayinn.platform', r.token); onDone(); } catch (ex) { setErr(ex.message); }
@@ -52,9 +52,9 @@ export default function Platform() {
   if (!hotels) return <Loading />;
   return (
     <div className="min-h-screen">
-      <header className="flex items-center justify-between bg-ink-900 px-6 py-4 text-white">
-        <div className="flex items-center gap-3"><Logo light /><span className="badge bg-amber-400 text-ink-900">Super admin</span></div>
-        <button className="text-sm text-ink-300 hover:text-white" onClick={() => { store.set('wayinn.platform', null); setAuthed(false); }}>Sign out</button>
+      <header className="flex items-center justify-between bg-night-900 px-6 py-4 text-white">
+        <div className="flex items-center gap-3"><Logo light /><span className="badge bg-white text-night-900">Super admin</span></div>
+        <button className="text-sm text-night-100 hover:text-white" onClick={() => { store.set('wayinn.platform', null); setAuthed(false); }}>Sign out</button>
       </header>
       <main className="mx-auto max-w-7xl space-y-5 px-6 py-6">
         {stats && <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
@@ -70,7 +70,7 @@ export default function Platform() {
               <thead><tr><th>Hotel</th><th>Plan</th><th>Rooms</th><th>Staff</th><th>Status</th><th>Last activity</th><th /></tr></thead>
               <tbody>{hotels.map((h) => (
                 <tr key={h.id}>
-                  <td><button className="font-semibold text-brand-700 hover:underline" onClick={async () => setDetail(await api.get(`/platform/hotels/${h.id}`, P))}>{h.name}</button><div className="text-xs text-ink-500">{h.slug} · {h.city}</div></td>
+                  <td><button className="link" onClick={async () => setDetail(await api.get(`/platform/hotels/${h.id}`, P))}>{h.name}</button><div className="text-xs text-ink-500">{h.slug} · {h.city}</div></td>
                   <td>{h.plan || '—'}</td><td>{h.rooms}{h.max_rooms ? ` / ${h.max_rooms}` : ''}</td><td>{h.staff}</td>
                   <td><Badge status={h.subscription_status} />{h.subscription_status === 'trial' && h.trial_ends_at && <div className="text-xs text-ink-500">ends {fmtDate(h.trial_ends_at)}</div>}</td>
                   <td className="text-ink-500">{fmtDateTime(h.last_activity)}</td>
