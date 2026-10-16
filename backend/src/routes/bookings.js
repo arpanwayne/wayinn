@@ -455,6 +455,16 @@ r.post('/stays/:id/checkout', requirePerm('bookings.checkout'), async (req, res)
         { balance_paise: totals.balance_paise });
     }
     if (totals.balance_paise > 0) assertPerm(req, 'payments.refund', 'Only a manager can check out with an unpaid balance');
+    // Food already charged to this room but never marked delivered by the kitchen: the guest is leaving and the
+    // charge is on the bill, so close the order instead of leaving it "in progress" on the front desk forever.
+    const closedOrders = await db.many(
+      `UPDATE orders SET status = 'delivered', status_changed_at = now()
+        WHERE stay_id = $1 AND settlement = 'room_posted' AND status NOT IN ('delivered','cancelled')
+        RETURNING id, order_no`, [id]);
+    if (closedOrders.length) {
+      await db.query(`UPDATE kots SET status = 'delivered' WHERE order_id = ANY($1::bigint[]) AND status NOT IN ('delivered','cancelled')`,
+        [closedOrders.map((o) => o.id)]);
+    }
     await db.query(
       `UPDATE stays SET status = 'checked_out', checked_out_at = now(), checked_out_by = $1, late_check_out = $2, portal_pin = NULL WHERE id = $3`,
       [req.user.id, b.late, id]);
@@ -468,8 +478,9 @@ r.post('/stays/:id/checkout', requirePerm('bookings.checkout'), async (req, res)
     let invoice = null;
     if (b.issue_invoice && totals.balance_paise <= 0) invoice = await issueInvoice(db, req, s.folio_id);
     await audit(req, 'stay.checked_out', 'stay', id,
-      { booking_id: s.booking_id, room: s.room_number, balance_paise: totals.balance_paise, early: checkOutDate !== s.check_out_date }, db);
-    return { stay_id: id, totals, invoice };
+      { booking_id: s.booking_id, room: s.room_number, balance_paise: totals.balance_paise, early: checkOutDate !== s.check_out_date,
+        closed_orders: closedOrders.map((o) => o.order_no) }, db);
+    return { stay_id: id, totals, invoice, closed_orders: closedOrders.map((o) => o.order_no) };
   });
   res.json({ ...out, folio: await loadFolio({ one, many }, req.hotelId, (await one('SELECT id FROM folios WHERE stay_id = $1', [id])).id) });
 });

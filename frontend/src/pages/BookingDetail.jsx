@@ -7,6 +7,26 @@ import { fmtDate, fmtDateTime, rupees, label, toPaise, addDays, todayStr } from 
 import { PageHeader, Badge, Loading, Modal, Field, ReasonDialog, ConfirmDialog, useAction, ErrorBox } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
 
+/** Bill summary for one stay. Before check-in nothing is charged yet, so ₹0 must not read as "settled". */
+function BillCell({ stay, t }) {
+  const advance = t.paid_paise - t.refunded_paise;
+  if (t.total_paise === 0) {
+    const pre = ['reserved', 'tentative'].includes(stay.status);
+    return <>
+      <span className="text-ink-400">—</span>
+      <div className="text-xs text-ink-500">
+        {advance > 0 ? `${rupees(advance)} advance paid` : pre ? 'Billed at check-in' : 'No charges'}
+      </div>
+    </>;
+  }
+  return <>
+    {rupees(t.total_paise)}
+    <div className={`text-xs ${t.balance_paise > 0 ? 'text-red-600' : 'text-ink-500'}`}>
+      {t.balance_paise > 0 ? `${rupees(t.balance_paise)} due` : t.balance_paise < 0 ? `${rupees(-t.balance_paise)} credit` : 'Paid in full'}
+    </div>
+  </>;
+}
+
 function ModifyStay({ stay, open, onClose, onDone }) {
   const { can } = useAuth();
   const [run, busy] = useAction();
@@ -112,8 +132,7 @@ export default function BookingDetail() {
                 <td>{s.adults}{s.children ? `+${s.children}` : ''}</td>
                 <td className="tabular-nums">{rupees(s.nightly_rate_paise, { decimals: 0 })}{s.extra_person_paise > 0 && <div className="text-xs text-ink-500">+{rupees(s.extra_person_paise, { decimals: 0 })} extra</div>}</td>
                 <td className="whitespace-nowrap tabular-nums">
-                  {s.folio_totals && <>{rupees(s.folio_totals.total_paise)}<div className={`text-xs ${s.folio_totals.balance_paise > 0 ? 'text-red-600' : 'text-ink-500'}`}>
-                    {s.folio_totals.balance_paise > 0 ? `${rupees(s.folio_totals.balance_paise)} due` : s.folio_totals.balance_paise < 0 ? `${rupees(-s.folio_totals.balance_paise)} credit` : 'settled'}</div></>}
+                  {s.folio_totals && <BillCell stay={s} t={s.folio_totals} />}
                 </td>
                 <td><Badge status={s.status} /></td>
                 <td className="whitespace-nowrap text-right">
