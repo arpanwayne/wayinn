@@ -168,6 +168,11 @@ test('full guest journey', async () => {
   const anyLine = folio.lines.find((l) => l.category === 'food' || l.category === 'room_service');
   assert.equal((await call('POST', `/api/folios/${stay.folio_id}/lines/${anyLine.id}/void`, { reason: 'test' }, tok.reception)).status, 403);
 
+  // A QR order the kitchen never marks delivered: it is on the bill, and checkout must close it
+  res = await call('POST', `/api/portal/${r101.qr_token}/orders`, { items: [{ menu_item_id: chai.id, quantity: 1 }] });
+  assert.equal(res.status, 201);
+  const qrOpen = res.data;
+
   // Checkout: early departure (stay was 2 nights; leaving today = 1 night). Balance must be paid.
   res = await call('POST', `/api/stays/${stay.id}/checkout`, {}, tok.reception);
   assert.equal(res.status, 409);
@@ -179,6 +184,12 @@ test('full guest journey', async () => {
   assert.equal(res.status, 200, JSON.stringify(res.data));
   assert.ok(res.data.invoice.invoice_no);
   assert.equal(res.data.folio.totals.balance_paise, 0);
+  assert.deepEqual(res.data.closed_orders, [qrOpen.order_no]);
+  assert.equal((await call('GET', `/api/orders/${qrOpen.id}`, null, tok.frontdesk)).data.status, 'delivered');
+  const active = (await call('GET', '/api/orders?active=1', null, tok.frontdesk)).data;
+  assert.equal(active.some((o) => o.id === qrOpen.id), false);
+  kds = (await call('GET', '/api/kitchen/kots', null, tok.kitchen)).data;
+  assert.equal(kds.kots.some((k) => k.order_id === qrOpen.id), false);
 
   // Closed folio: no more charges
   res = await call('POST', `/api/folios/${stay.folio_id}/charges`, { description: 'Laundry', unit_price_paise: 10000 }, tok.reception);

@@ -4,6 +4,9 @@ import { api } from '../lib/api.js';
 import { rupees } from '../lib/format.js';
 import { Modal, Field, useAction, useToast } from './ui.jsx';
 
+const READY = ['ready', 'inspected'];
+const hkLabel = (s) => (s ? s.replace(/_/g, ' ') : 'status unknown');
+
 /** Check-in flow: assign room, capture ID if required, override dirty room with confirmation. */
 export function CheckInDialog({ stay, open, onClose, onDone }) {
   const [run, busy] = useAction();
@@ -26,6 +29,15 @@ export function CheckInDialog({ stay, open, onClose, onDone }) {
   }, [open, stay]);
 
   if (!stay) return null;
+  // Assigned room is never in free_rooms (the stay itself occupies it), so add it with its own housekeeping status.
+  const options = [...rooms];
+  if (stay.room_id && !rooms.some((r) => r.id === stay.room_id)) {
+    options.unshift({ id: stay.room_id, number: stay.room_number, hk_status: stay.hk_status, assigned: true });
+  }
+  options.sort((a, b) => Number(!READY.includes(a.hk_status)) - Number(!READY.includes(b.hk_status)));
+  const selected = options.find((r) => String(r.id) === String(roomId));
+  const notReady = selected && selected.hk_status && !READY.includes(selected.hk_status);
+  const readyAlternatives = options.filter((r) => READY.includes(r.hk_status) && r.id !== selected?.id).length;
   const submit = async (force = false) => {
     try {
       if (needId && idNumber) await api.put(`/guests/${stay.guest_id}`, { id_type: idType, id_number: idNumber });
@@ -43,7 +55,7 @@ export function CheckInDialog({ stay, open, onClose, onDone }) {
     <Modal open={open} onClose={onClose} title={`Check in — ${stay.guest_name}`}
       footer={pin ? <button className="btn-primary" onClick={onClose}>Done</button> : <>
         <button className="btn-secondary" onClick={onClose}>Cancel</button>
-        {needForce
+        {needForce || notReady
           ? <button className="btn-danger" disabled={busy} onClick={() => run(() => submit(true))}>Check in anyway</button>
           : <button className="btn-primary" disabled={busy || (needId && !idNumber)} onClick={() => run(() => submit(false))}>Check in</button>}
       </>}>
@@ -58,10 +70,19 @@ export function CheckInDialog({ stay, open, onClose, onDone }) {
           <Field label="Room">
             <select className="input" value={roomId} onChange={(e) => { setRoomId(e.target.value); setNeedForce(''); }}>
               <option value="">Select room</option>
-              {stay.room_id && !rooms.some((r) => r.id === stay.room_id) && <option value={stay.room_id}>{stay.room_number} (assigned)</option>}
-              {rooms.map((r) => <option key={r.id} value={r.id}>{r.number} · {r.hk_status}</option>)}
+              {options.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.number}{r.assigned ? ' (assigned)' : ''} · {hkLabel(r.hk_status)}{READY.includes(r.hk_status) ? '' : ' ⚠'}
+                </option>
+              ))}
             </select>
           </Field>
+          {notReady && !needForce && (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              Room {selected.number} is <b>{hkLabel(selected.hk_status)}</b> — housekeeping has not marked it ready.
+              {readyAlternatives > 0 ? ` ${readyAlternatives} ready room${readyAlternatives > 1 ? 's are' : ' is'} available in the list.` : ' No ready room of this type is free right now.'}
+            </div>
+          )}
           {needId && (
             <div className="grid grid-cols-2 gap-3 rounded-lg bg-amber-50 p-3">
               <div className="col-span-2 text-xs font-semibold text-amber-600">Guest ID is required at check-in</div>
@@ -91,7 +112,8 @@ export function CheckOutDialog({ stay, open, onClose, onDone }) {
   const submit = async (allow_balance = false) => {
     try {
       const r = await api.post(`/stays/${stay.id}/checkout`, { allow_balance });
-      toast(r.invoice?.invoice_no ? `Checked out · Invoice ${r.invoice.invoice_no}` : 'Checked out');
+      const closed = r.closed_orders?.length ? ` · Closed food order${r.closed_orders.length > 1 ? 's' : ''} ${r.closed_orders.join(', ')}` : '';
+      toast((r.invoice?.invoice_no ? `Checked out · Invoice ${r.invoice.invoice_no}` : 'Checked out') + closed);
       onDone?.(r);
       onClose();
     } catch (e) {
