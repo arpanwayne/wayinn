@@ -221,7 +221,8 @@ r.get('/folios/:id/invoice', requirePerm('folio.view'), async (req, res) => {
   const guestGstin = f.bill_to_gstin || guest?.company_gstin || null;
   // With a company GSTIN the invoice is made out to the company, not the person who stays.
   const billName = f.bill_to_name || (guestGstin && guest?.company_name) || f.guest_name;
-  const interState = !!(guestGstin && h.gstin && guestGstin.slice(0, 2) !== h.gstin.slice(0, 2));
+  const hotelState = h.state_code || (h.gstin ? h.gstin.slice(0, 2) : null);
+  const interState = !!(guestGstin && hotelState && guestGstin.slice(0, 2) !== hotelState);
   const live = f.lines.filter((l) => !l.voided_at);
   res.json({
     type: f.status === 'closed' ? 'TAX INVOICE' : 'PROFORMA / INTERIM BILL',

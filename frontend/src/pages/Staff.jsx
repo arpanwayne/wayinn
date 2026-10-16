@@ -5,7 +5,17 @@ import { useAuth } from '../lib/auth.jsx';
 import { fmtDateTime, label } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, useAction } from '../components/ui.jsx';
 
-const ROLES = ['owner', 'front_desk', 'kitchen'];
+const ROLES = ['owner', 'manager', 'front_desk', 'cashier', 'restaurant', 'kitchen', 'housekeeping', 'maintenance'];
+const ROLE_HINT = {
+  owner: 'Everything, including hotel settings',
+  manager: 'Everything except hotel settings',
+  front_desk: 'Bookings, check-in/out, payments, room orders',
+  cashier: 'Bills, payments and restaurant settlement',
+  restaurant: 'Restaurant orders and settlement',
+  kitchen: 'Kitchen screen only',
+  housekeeping: 'Housekeeping tasks and room status only — no bookings or money',
+  maintenance: 'Maintenance jobs only — no bookings or money',
+};
 
 export default function Staff() {
   const { user } = useAuth();
@@ -23,8 +33,10 @@ export default function Staff() {
     else setForm({ ...form, extra_permissions: on ? form.extra_permissions.filter((x) => x !== p) : [...form.extra_permissions, p] });
   };
   const save = () => run(async () => {
+    if (form.phone && /[@a-z]/i.test(form.phone)) throw new Error('Phone number looks wrong (browser autofill?). Please check it.');
+    if (form.id && form.resetPassword && (form.password || '').length < 8) throw new Error('New password must be at least 8 characters');
     const body = { name: form.name, phone: form.phone || null, role: form.role, extra_permissions: form.extra_permissions, revoked_permissions: form.revoked_permissions,
-      ...(form.password ? { password: form.password } : {}) };
+      ...(form.password && (!form.id || form.resetPassword) ? { password: form.password } : {}) };
     if (form.id) await api.patch(`/staff/${form.id}`, { ...body, active: form.active });
     else await api.post('/staff', { ...body, email: form.email, password: form.password });
     setForm(null); reload();
@@ -41,7 +53,7 @@ export default function Staff() {
               <td>{label(s.role)}{(s.extra_permissions.length > 0 || s.revoked_permissions.length > 0) && <span className="ml-1 text-xs text-amber-600">custom</span>}</td>
               <td className="text-ink-500">{fmtDateTime(s.last_login_at)}</td>
               <td><Badge status={s.active ? 'active' : 'cancelled'}>{s.active ? 'Active' : 'Inactive'}</Badge></td>
-              <td className="text-right"><button className="btn-secondary btn-sm" onClick={() => setForm({ ...s, password: '' })}>Edit</button></td>
+              <td className="text-right"><button className="btn-secondary btn-sm" onClick={() => setForm({ ...s, password: '', resetPassword: false })}>Edit</button></td>
             </tr>
           ))}</tbody>
         </table>
@@ -51,12 +63,19 @@ export default function Staff() {
         {form && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Name"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-              <Field label="Email (login)"><input className="input" type="email" disabled={!!form.id} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
-              <Field label="Phone"><input className="input" value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+              <Field label="Name"><input className="input" name="staff-name" autoComplete="off" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+              <Field label="Email (login)"><input className="input" type="email" name="staff-login-email" autoComplete="off" disabled={!!form.id} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+              <Field label="Phone"><input className="input" type="tel" name="staff-phone" autoComplete="off" inputMode="tel" value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
               <Field label="Role"><select className="input" value={form.role} disabled={form.id === user.id} onChange={(e) => setForm({ ...form, role: e.target.value, extra_permissions: [], revoked_permissions: [] })}>
-                {ROLES.filter((r) => r !== 'owner' || user.role === 'owner').map((r) => <option key={r} value={r}>{label(r)}</option>)}</select></Field>
-              <Field label={form.id ? 'New password (leave blank to keep)' : 'Password (min 8)'}><input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></Field>
+                {ROLES.filter((r) => r !== 'owner' || user.role === 'owner').map((r) => <option key={r} value={r}>{label(r)}</option>)}</select>
+                <div className="mt-1 text-xs text-ink-500">{ROLE_HINT[form.role]}</div></Field>
+              {form.id && !form.resetPassword
+                ? <Field label="Password"><button type="button" className="btn-secondary w-full" onClick={() => setForm({ ...form, resetPassword: true, password: '' })}>Reset password…</button></Field>
+                : <Field label={form.id ? 'New password (min 8)' : 'Password (min 8)'}>
+                    <input className="input" type="password" name="staff-new-password" autoComplete="new-password" value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                    {form.id && <button type="button" className="mt-1 text-xs text-ink-500 underline" onClick={() => setForm({ ...form, resetPassword: false, password: '' })}>Keep current password</button>}
+                  </Field>}
               {form.id && form.id !== user.id && <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Account active</label>}
             </div>
             <div>

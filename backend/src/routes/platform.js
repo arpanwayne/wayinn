@@ -69,9 +69,10 @@ r.post('/platform/hotels', async (req, res) => {
   }), req.body);
   const out = await tx(async (db) => {
     const h = await db.one(
-      `INSERT INTO hotels (name, slug, city, state, phone, email, gstin, plan_id, subscription_status, trial_ends_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'trial', now() + ($9 || ' days')::interval) RETURNING *`,
-      [b.name, b.slug, b.city ?? null, b.state ?? null, b.phone ?? null, b.email ?? null, b.gstin ?? null, b.plan_id ?? null, b.trial_days]);
+      `INSERT INTO hotels (name, slug, city, state, phone, email, gstin, state_code, plan_id, subscription_status, trial_ends_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'trial', now() + ($10 || ' days')::interval) RETURNING *`,
+      [b.name, b.slug, b.city ?? null, b.state ?? null, b.phone ?? null, b.email ?? null, b.gstin ?? null,
+        b.gstin && /^\d{2}/.test(b.gstin) ? b.gstin.slice(0, 2) : null, b.plan_id ?? null, b.trial_days]);
     const owner = await db.one(
       `INSERT INTO users (hotel_id, name, email, phone, password_hash, role) VALUES ($1,$2,$3,$4,$5,'owner') RETURNING id, name, email`,
       [h.id, b.owner.name, b.owner.email, b.owner.phone ?? null, await bcrypt.hash(b.owner.password, 10)]);

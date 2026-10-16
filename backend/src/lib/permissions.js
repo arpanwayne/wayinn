@@ -45,19 +45,28 @@ export const PERMISSIONS = {
 const ALL = Object.keys(PERMISSIONS);
 const pick = (...prefixes) => ALL.filter((p) => prefixes.some((x) => p === x || p.startsWith(x + '.')));
 
-// Three roles. Front desk also covers housekeeping, maintenance and the day-to-day manager work.
-// Money-sensitive actions (discounts, voids, refunds, rate overrides) stay with the owner unless
+// Each role gets only what that job needs, so e.g. housekeeping cannot cancel bookings or take money.
+// Money-sensitive actions (discounts, voids, refunds, rate overrides) stay with owner/manager unless
 // the owner grants them to a specific person.
 export const ROLE_PERMISSIONS = {
   owner: ALL,
+  manager: ALL.filter((p) => p !== 'hotel.settings'),
   front_desk: [
     ...pick('bookings', 'guests', 'requests', 'hk', 'maintenance'),
     'rooms.status', 'folio.view', 'folio.charge', 'payments.record', 'invoice.issue',
     'pos.order', 'pos.settle', 'pos.cancel',
   ],
+  cashier: ['bookings.view', 'guests.view', 'folio.view', 'folio.charge', 'payments.record', 'invoice.issue',
+    'pos.order', 'pos.settle', 'reports.view'],
+  restaurant: ['pos.order', 'pos.settle', 'kitchen.view', 'requests.view'],
   // Kitchen sees incoming tickets and marks them delivered. Cancelling is front desk only.
   kitchen: ['kitchen.view'],
+  housekeeping: ['hk.view', 'hk.work', 'rooms.status', 'requests.view', 'maintenance.view', 'maintenance.manage'],
+  maintenance: ['maintenance.view', 'maintenance.work', 'hk.view'],
 };
+
+// Roles that can be assigned housekeeping / maintenance jobs.
+export const TASK_ROLES = ['owner', 'manager', 'front_desk', 'housekeeping', 'maintenance'];
 
 export const ROLES = Object.keys(ROLE_PERMISSIONS);
 

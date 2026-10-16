@@ -159,7 +159,7 @@ test('full guest journey', async () => {
   assert.equal((await call('GET', '/api/hotel/audit', null, tok.frontdesk)).status, 403);
   assert.equal((await call('GET', '/api/bookings', null, tok.kitchen)).status, 403);
   assert.equal((await call('POST', '/api/orders', { order_type: 'takeaway', items: [{ menu_item_id: chai.id, quantity: 1 }] }, tok.kitchen)).status, 403);
-  assert.equal((await call('POST', '/api/staff', { name: 'Old Role', email: 'old@x.in', password: 'Password1', role: 'manager' }, tok.owner)).status, 400);
+  assert.equal((await call('POST', '/api/staff', { name: 'Old Role', email: 'old@x.in', password: 'Password1', role: 'receptionist' }, tok.owner)).status, 400);
 
   // Discount + void are audited, front desk cannot void
   res = await call('POST', `/api/folios/${stay.folio_id}/discount`, { percent: 10, apply_to: 'room', reason: 'Repeat guest' }, tok.owner);
@@ -278,4 +278,48 @@ test('platform onboarding and plan limits', async () => {
   // Suspension blocks the hotel
   await call('PATCH', `/api/platform/hotels/${res.data?.hotel?.id ?? (await pool.query('SELECT id FROM hotels WHERE slug=$1', [slug])).rows[0].id}`, { subscription_status: 'suspended' }, p.token);
   assert.equal((await call('GET', '/api/auth/me', null, ownerTok)).status, 402);
+});
+
+test('separate staff roles: housekeeping cannot touch bookings or money', async () => {
+  const email = `hk.${Date.now()}@demo-hotel.in`;
+  let res = await call('POST', '/api/staff', { name: 'HK Tester', email, password: 'Wayinn@123', role: 'housekeeping' }, tok.owner);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const hk = await login(email);
+  assert.equal((await call('GET', '/api/housekeeping/board', null, hk)).status, 200);
+  assert.equal((await call('GET', '/api/bookings', null, hk)).status, 403);
+  assert.equal((await call('POST', '/api/bookings/1/cancel', { reason: 'nope' }, hk)).status, 403);
+  assert.equal((await call('POST', '/api/folios/1/payments', { method: 'cash', amount_paise: 100 }, hk)).status, 403);
+  // Housekeeping staff can be assigned jobs
+  const board = (await call('GET', '/api/housekeeping/board', null, tok.owner)).data;
+  assert.ok(board.staff.some((s) => s.name === 'HK Tester'));
+});
+
+test('GST state code follows the GSTIN', async () => {
+  let res = await call('PUT', '/api/hotel', { gstin: '03ABCDE1234F1Z5', state_code: '' }, tok.owner);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.state_code, '03');
+  res = await call('PUT', '/api/hotel', { state_code: '07' }, tok.owner);
+  assert.equal(res.status, 400);
+  res = await call('PUT', '/api/hotel', { state_code: '3' }, tok.owner);
+  assert.equal(res.status, 200);
+  assert.equal(res.data.state_code, '03');
+});
+
+test('dashboard revenue: breakdown adds up and ignores guests not yet checked in', async () => {
+  const before = (await call('GET', '/api/reports/dashboard', null, tok.owner)).data.revenue_today;
+  const t = before;
+  assert.equal(t.total, t.room + t.food + t.other + t.discount);
+  const rooms = (await call('GET', '/api/rooms', null, tok.owner)).data;
+  const r = rooms.find((x) => x.number === '102');
+  let res = await call('POST', '/api/bookings', {
+    guest: { full_name: 'Future Guest', phone: '9222222222' },
+    stays: [{ room_type_id: r.room_type_id, check_in_date: today, check_out_date: addDays(today, 1) }],
+  }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const stay = res.data.stays[0];
+  res = await call('POST', `/api/folios/${stay.folio_id}/charges`, { description: 'Airport pickup', unit_price_paise: 50000 }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const after = (await call('GET', '/api/reports/dashboard', null, tok.owner)).data.revenue_today;
+  assert.equal(after.total, before.total, 'charge on a not-checked-in booking must not count as revenue yet');
+  await call('POST', `/api/bookings/${res.data?.booking_id || stay.booking_id}/cancel`, { reason: 'test cleanup' }, tok.owner);
 });

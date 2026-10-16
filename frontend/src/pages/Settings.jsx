@@ -32,11 +32,18 @@ function HotelProfile() {
       <div className="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
         <Field label="Hotel name"><input className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} /></Field>
         <Field label="Legal name"><input className="input" value={f.legal_name || ''} onChange={(e) => set({ legal_name: e.target.value })} /></Field>
-        <Field label="GSTIN"><input className="input uppercase" maxLength={15} value={f.gstin || ''} onChange={(e) => set({ gstin: e.target.value.toUpperCase() })} /></Field>
+        <Field label="GSTIN"><input className="input uppercase" maxLength={15} value={f.gstin || ''} onChange={(e) => {
+          const gstin = e.target.value.toUpperCase();
+          set(/^\d{2}/.test(gstin) ? { gstin, state_code: gstin.slice(0, 2) } : { gstin });
+        }} /></Field>
         <Field label="Address" className="sm:col-span-2"><input className="input" value={f.address || ''} onChange={(e) => set({ address: e.target.value })} /></Field>
         <Field label="City"><input className="input" value={f.city || ''} onChange={(e) => set({ city: e.target.value })} /></Field>
         <Field label="State"><input className="input" value={f.state || ''} onChange={(e) => set({ state: e.target.value })} /></Field>
-        <Field label="GST state code"><input className="input" value={f.state_code || ''} onChange={(e) => set({ state_code: e.target.value })} /></Field>
+        <Field label="GST state code"><input className="input" maxLength={2} inputMode="numeric" value={f.state_code || ''} onChange={(e) => set({ state_code: e.target.value.replace(/\D/g, '') })} />
+          <div className={`mt-1 text-xs ${f.gstin && f.state_code && f.gstin.slice(0, 2) !== f.state_code ? 'text-red-600' : 'text-ink-500'}`}>
+            {f.gstin && f.state_code && f.gstin.slice(0, 2) !== f.state_code ? `Must be ${f.gstin.slice(0, 2)} to match the GSTIN`
+              : GST_STATES[f.state_code] ? `${GST_STATES[f.state_code]} · decides CGST+SGST vs IGST` : 'First 2 digits of the GSTIN'}
+          </div></Field>
         <Field label="Phone"><input className="input" value={f.phone || ''} onChange={(e) => set({ phone: e.target.value })} /></Field>
         <Field label="Email"><input className="input" value={f.email || ''} onChange={(e) => set({ email: e.target.value })} /></Field>
         <Field label="Check-in time"><input type="time" className="input" value={f.checkin_time.slice(0, 5)} onChange={(e) => set({ checkin_time: e.target.value })} /></Field>
@@ -219,6 +226,17 @@ function QrSheet() {
     </div>
   );
 }
+
+
+// GST state codes (first two digits of a GSTIN)
+const GST_STATES = {
+  '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana',
+  '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh', '13': 'Nagaland',
+  '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
+  '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat', '26': 'Dadra & Nagar Haveli and Daman & Diu',
+  '27': 'Maharashtra', '29': 'Karnataka', '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry',
+  '35': 'Andaman & Nicobar Islands', '36': 'Telangana', '37': 'Andhra Pradesh', '38': 'Ladakh',
+};
 
 export default function Settings() {
   const { can } = useAuth();

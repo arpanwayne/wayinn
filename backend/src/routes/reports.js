@@ -12,6 +12,11 @@ import { postRoomNights } from '../lib/folio.js';
 const r = Router();
 r.use(['/reports', '/alerts', '/summary', '/night-audit'], requireStaff);
 
+// Charges on a bill whose guest has not checked in yet (e.g. a pre-posted charge on a reservation) are not
+// earned revenue. Cancellation / no-show charges are, so only reserved and tentative stays are left out.
+const EARNED = `NOT EXISTS (SELECT 1 FROM folios ef JOIN stays es ON es.id = ef.stay_id
+                    WHERE ef.id = folio_lines.folio_id AND es.status IN ('tentative','reserved'))`;
+
 const tzSql = (req) => `'${req.hotel.timezone.replace(/'/g, '')}'`;
 
 function range(req) {
@@ -53,12 +58,13 @@ async function dashboardData(req) {
     one(`SELECT COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('room','extra_person')),0) AS room,
                 COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('food','room_service')),0) AS food,
                 COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('service','extra')),0) AS other,
-                COALESCE(SUM(amount_paise) FILTER (WHERE category = 'discount'),0) AS discount
-           FROM folio_lines WHERE hotel_id = $1 AND business_date = $2 AND voided_at IS NULL`, [h, today]),
+                COALESCE(SUM(amount_paise) FILTER (WHERE category = 'discount'),0) AS discount,
+                COALESCE(SUM(amount_paise),0) AS total
+           FROM folio_lines WHERE hotel_id = $1 AND business_date = $2 AND voided_at IS NULL AND ${EARNED}`, [h, today]),
     one(`SELECT COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('room','extra_person')),0) AS room,
                 COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('food','room_service')),0) AS food,
                 COALESCE(SUM(amount_paise),0) AS total
-           FROM folio_lines WHERE hotel_id = $1 AND business_date BETWEEN $2 AND $3 AND voided_at IS NULL`, [h, monthStart, today]),
+           FROM folio_lines WHERE hotel_id = $1 AND business_date BETWEEN $2 AND $3 AND voided_at IS NULL AND ${EARNED}`, [h, monthStart, today]),
     many(`SELECT method, SUM(CASE WHEN kind = 'refund' THEN -amount_paise ELSE amount_paise END) AS amount_paise
             FROM payments WHERE hotel_id = $1 AND voided_at IS NULL AND (created_at AT TIME ZONE ${tzSql(req)})::date = $2 GROUP BY method`, [h, today]),
     one(`SELECT COALESCE(SUM(bal),0) AS amount_paise, count(*) FILTER (WHERE bal > 0)::int AS folios FROM (
@@ -113,7 +119,7 @@ r.get('/reports/daily', requirePerm('reports.financial'), async (req, res) => {
                          SUM(amount_paise) FILTER (WHERE category IN ('service','extra')) AS other,
                          SUM(amount_paise) FILTER (WHERE category = 'discount') AS discount,
                          SUM(tax_paise) AS tax
-                    FROM folio_lines WHERE hotel_id = $1 AND voided_at IS NULL AND business_date BETWEEN $2 AND $3 GROUP BY business_date),
+                    FROM folio_lines WHERE hotel_id = $1 AND voided_at IS NULL AND business_date BETWEEN $2 AND $3 AND ${EARNED} GROUP BY business_date),
           col AS (SELECT (created_at AT TIME ZONE ${tzSql(req)})::date AS day, SUM(CASE WHEN kind = 'refund' THEN -amount_paise ELSE amount_paise END) AS collected
                     FROM payments WHERE hotel_id = $1 AND voided_at IS NULL GROUP BY 1)
      SELECT d.day, (SELECT n FROM rooms) AS rooms, o.occupied,
@@ -143,7 +149,7 @@ r.get('/reports/revenue-by-department', requirePerm('reports.financial'), async 
   const { from, to } = range(req);
   out(req, res, `department-revenue-${from}-${to}`, await many(
     `SELECT category, SUM(amount_paise) AS amount_paise, SUM(tax_paise) AS tax_paise, count(*)::int AS lines
-       FROM folio_lines WHERE hotel_id = $1 AND voided_at IS NULL AND business_date BETWEEN $2 AND $3 GROUP BY category ORDER BY amount_paise DESC`,
+       FROM folio_lines WHERE hotel_id = $1 AND voided_at IS NULL AND business_date BETWEEN $2 AND $3 AND ${EARNED} GROUP BY category ORDER BY amount_paise DESC`,
     [req.hotelId, from, to]));
 });
 
