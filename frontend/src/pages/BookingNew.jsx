@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { addDays, todayStr, nights, rupees, toPaise } from '../lib/format.js';
-import { PageHeader, Field, useAction } from '../components/ui.jsx';
+import { PageHeader, Field, useAction, useToast } from '../components/ui.jsx';
 
 const emptyGuest = { full_name: '', phone: '', email: '', id_type: 'Aadhaar', id_number: '', address: '', city: '', company_name: '', company_gstin: '' };
 
@@ -13,6 +13,8 @@ export default function BookingNew() {
   const nav = useNavigate();
   const { can } = useAuth();
   const [run, busy] = useAction();
+  const toast = useToast();
+  const [company, setCompany] = useState({ company_name: '', company_gstin: '' }); // company details of a returning guest
 
   const [from, setFrom] = useState(params.get('from') || todayStr());
   const [to, setTo] = useState(params.get('to') || addDays(params.get('from') || todayStr(), 1));
@@ -48,7 +50,19 @@ export default function BookingNew() {
     return (rate + extra) * n;
   };
   const total = lines.reduce((a, l) => a + lineTotal(l), 0);
-  const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  // Keep adults + children within the room type's capacity as the user types, so the form can never hold a count the server will refuse.
+  const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => {
+    if (j !== i) return l;
+    const next = { ...l, ...patch };
+    const max = typeById[String(next.room_type_id)]?.max_occupancy;
+    if (max) {
+      if ('adults' in patch && next.adults !== '') next.adults = Math.min(Math.max(1, Number(next.adults) || 1), max);
+      if ('children' in patch && next.children !== '') next.children = Math.min(Math.max(0, Number(next.children) || 0), Math.max(0, max - (Number(next.adults) || 1)));
+      if ('adults' in patch || 'room_type_id' in patch) next.children = Math.min(Number(next.children) || 0, Math.max(0, max - (Number(next.adults) || 1)));
+    }
+    return next;
+  }));
+  const pickGuest = (g) => { setExisting(g); setCompany({ company_name: g.company_name || '', company_gstin: g.company_gstin || '' }); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -62,7 +76,14 @@ export default function BookingNew() {
       ...(deposit.amount ? { deposit: { amount_paise: toPaise(deposit.amount), method: deposit.method, reference: deposit.reference || null } } : {}),
       check_in_now: walkIn && from === todayStr() && lines.every((l) => l.room_id),
     };
-    const b = await run(() => api.post('/bookings', body), `Booking created`);
+    const b = await run(async () => {
+      // Company details typed for a returning guest are saved on the guest so the invoice can use them.
+      if (existing && can('guests.manage') && (company.company_name !== (existing.company_name || '') || company.company_gstin !== (existing.company_gstin || ''))) {
+        try { await api.put(`/guests/${existing.id}`, { company_name: company.company_name || null, company_gstin: company.company_gstin || null }); }
+        catch (err) { toast(`Company details not saved: ${err.message}`, 'error'); }
+      }
+      return api.post('/bookings', body);
+    }, `Booking created`);
     nav(`/bookings/${b.id}`, { state: { warnings: b.warnings } });
   };
 
@@ -100,8 +121,8 @@ export default function BookingNew() {
                         {(t?.free_rooms || []).filter((r) => !lines.some((o, j) => j !== i && String(o.room_id) === String(r.id))).map((r) => <option key={r.id} value={r.id}>{r.number}{r.hk_status !== 'ready' ? ` (${r.hk_status})` : ''}</option>)}
                       </select>
                     </Field>
-                    <Field label="Adults"><input type="number" min={1} max={t?.max_occupancy || 6} className="input" value={l.adults} onChange={(e) => setLine(i, { adults: e.target.value })} /></Field>
-                    <Field label="Children"><input type="number" min={0} className="input" value={l.children} onChange={(e) => setLine(i, { children: e.target.value })} /></Field>
+                    <Field label="Adults" hint={t ? `Max ${t.max_occupancy} guests` : null}><input type="number" min={1} max={t?.max_occupancy || 6} className="input" value={l.adults} onChange={(e) => setLine(i, { adults: e.target.value })} /></Field>
+                    <Field label="Children"><input type="number" min={0} max={t ? Math.max(0, t.max_occupancy - (Number(l.adults) || 1)) : undefined} className="input" value={l.children} onChange={(e) => setLine(i, { children: e.target.value })} /></Field>
                     <Field label="Rate/night ₹" hint={t && !can('rates.override') ? 'Fixed rate' : null}>
                       <input className="input" inputMode="decimal" disabled={!can('rates.override')} placeholder={t ? String(t.base_rate_paise / 100) : ''} value={l.rate} onChange={(e) => setLine(i, { rate: e.target.value })} />
                     </Field>
@@ -124,6 +145,12 @@ export default function BookingNew() {
                 <div><div className="font-semibold">{existing.full_name}</div><div className="text-xs text-ink-500">{existing.phone} · {existing.stay_count} previous stays</div></div>
                 <button type="button" className="btn-ghost btn-sm" onClick={() => setExisting(null)}>Change</button>
               </div>
+            ) : null}
+            {existing ? (
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Company (for GST invoice)"><input className="input" value={company.company_name} disabled={!can('guests.manage')} onChange={(e) => setCompany({ ...company, company_name: e.target.value })} /></Field>
+                <Field label="Company GSTIN"><input className="input uppercase" maxLength={15} value={company.company_gstin} disabled={!can('guests.manage')} onChange={(e) => setCompany({ ...company, company_gstin: e.target.value.toUpperCase() })} /></Field>
+              </div>
             ) : (
               <>
                 <div className="relative mb-4">
@@ -131,7 +158,7 @@ export default function BookingNew() {
                   {guestResults.length > 0 && (
                     <div className="absolute z-10 mt-1 w-full rounded-lg border border-ink-100 bg-white shadow-lg">
                       {guestResults.slice(0, 6).map((g) => (
-                        <button type="button" key={g.id} className="block w-full px-3 py-2 text-left text-sm hover:bg-ink-50" onClick={() => { setExisting(g); setGuestQuery(''); setGuestResults([]); }}>
+                        <button type="button" key={g.id} className="block w-full px-3 py-2 text-left text-sm hover:bg-ink-50" onClick={() => { pickGuest(g); setGuestQuery(''); setGuestResults([]); }}>
                           {g.full_name} <span className="text-ink-400">· {g.phone}</span>
                         </button>
                       ))}

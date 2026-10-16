@@ -33,7 +33,7 @@ export default function Bookings() {
                   <td className="whitespace-nowrap">{fmtDate(b.check_in_date)} → {fmtDate(b.check_out_date)}</td>
                   <td>{b.rooms || <span className="text-ink-400">{b.room_count} unassigned</span>}</td>
                   <td className="text-ink-500">{label(b.source)}</td>
-                  <td><Badge status={b.status} /> {b.stay_statuses?.includes('checked_in') && <Badge status="checked_in">In house</Badge>}</td>
+                  <td><Badge status={b.display_status || b.status} />{b.display_status === 'checked_in' && <span className="ml-1 text-xs text-ink-500">In house</span>}</td>
                 </tr>
               ))}
             </tbody>

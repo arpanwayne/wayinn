@@ -42,9 +42,12 @@ export default function GuestPortal() {
       store.set('wayinn.guest', r.token); setVerifyOpen(false); setCode(''); await loadMine(); flash(`Welcome, ${r.guest_name}!`);
     } catch (e) { flash(e.message); } finally { setBusy(false); }
   };
-  const request = async (type) => {
-    const message = type === 'maintenance' || type === 'amenity' ? prompt('Tell us a little more (optional)') : null;
-    try { await api.post(`/portal/${token}/requests`, { type, message }, { scope: 'none' }); flash('Request sent — our team will be with you shortly.'); } catch (e) { flash(e.message); }
+  const [detailFor, setDetailFor] = useState(null); // request type waiting for an optional note
+  const [detailText, setDetailText] = useState('');
+  const request = async (type, message = null) => {
+    if (message === null && (type === 'maintenance' || type === 'amenity')) { setDetailText(''); setDetailFor(type); return; }
+    setDetailFor(null);
+    try { await api.post(`/portal/${token}/requests`, { type, message: message || null }, { scope: 'none' }); flash('Request sent — our team will be with you shortly.'); } catch (e) { flash(e.message); }
   };
   // Ordering needs only the room QR (the room must have a checked-in guest). The bill and order history stay behind the PIN.
   const placeOrder = async () => {
@@ -184,6 +187,20 @@ export default function GuestPortal() {
           </div>
           <input className="input mb-2" placeholder="Note for the kitchen (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
           <button className="btn-primary w-full py-3" disabled={busy} onClick={placeOrder}>Order · {rupees0(subtotal)} + {info.food_tax_rate}% GST · charged to room</button>
+        </div>
+      )}
+
+      {detailFor && (
+        <div className="fixed inset-0 z-20 flex items-end bg-ink-900/40" onClick={() => setDetailFor(null)}>
+          <div className="mx-auto w-full max-w-md rounded-t-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="font-display text-lg font-bold">Tell us a little more</div>
+            <p className="mb-3 text-sm text-ink-500">Optional — it helps our team arrive with the right thing.</p>
+            <textarea className="input" rows={3} value={detailText} onChange={(e) => setDetailText(e.target.value)} autoFocus />
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="btn-secondary py-3" onClick={() => setDetailFor(null)}>Cancel</button>
+              <button className="btn-primary py-3" onClick={() => request(detailFor, detailText.trim())}>Send request</button>
+            </div>
+          </div>
         </div>
       )}
 

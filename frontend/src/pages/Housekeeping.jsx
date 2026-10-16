@@ -3,7 +3,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ago, label } from '../lib/format.js';
-import { PageHeader, Badge, Loading, Modal, Field, Tabs, Empty, useAction } from '../components/ui.jsx';
+import { PageHeader, Badge, Loading, Modal, Field, Tabs, Empty, PromptDialog, useAction } from '../components/ui.jsx';
 
 export default function Housekeeping() {
   const { can, user } = useAuth();
@@ -12,6 +12,7 @@ export default function Housekeeping() {
   const [tab, setTab] = useState('tasks');
   const [newTask, setNewTask] = useState(null);
   const [lost, setLost] = useState(null);
+  const [returning, setReturning] = useState(null);
   const [run, busy] = useAction();
   if (!data) return <Loading />;
   const manager = can('hk.manage');
@@ -78,7 +79,7 @@ export default function Housekeeping() {
             <table className="table"><tbody>{lf.data.map((l) => (
               <tr key={l.id}><td className="font-semibold">{l.item}<div className="text-xs font-normal text-ink-500">{l.description}</div></td><td>{l.room_number ? `Room ${l.room_number}` : ''}</td>
                 <td className="text-xs text-ink-500">{l.found_by_name} · {ago(l.created_at)}</td><td><Badge status={l.status === 'stored' ? 'pending' : 'done'}>{label(l.status)}</Badge></td>
-                <td className="text-right">{l.status === 'stored' && <button className="btn-ghost btn-sm" onClick={() => { const to = prompt('Returned to (name)'); if (to) run(async () => { await api.patch(`/lost-found/${l.id}`, { status: 'returned', returned_to: to }); lf.reload(); }); }}>Returned</button>}</td></tr>
+                <td className="text-right">{l.status === 'stored' && <button className="btn-ghost btn-sm" onClick={() => setReturning(l)}>Returned</button>}</td></tr>
             ))}</tbody></table>
           )}
         </div>
@@ -95,6 +96,8 @@ export default function Housekeeping() {
           <Field label="Notes" className="col-span-2"><input className="input" value={newTask.notes} onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })} /></Field>
         </div>}
       </Modal>
+      <PromptDialog open={!!returning} title={`Returned · ${returning?.item || ''}`} label="Returned to (name)" confirmLabel="Mark returned" minLength={2} onClose={() => setReturning(null)}
+        onSubmit={(to) => run(async () => { await api.patch(`/lost-found/${returning.id}`, { status: 'returned', returned_to: to }); setReturning(null); lf.reload(); }, 'Marked as returned')} />
       <Modal open={!!lost} onClose={() => setLost(null)} title="Log lost & found item"
         footer={<><button className="btn-secondary" onClick={() => setLost(null)}>Cancel</button><button className="btn-primary" disabled={!lost?.item} onClick={() => run(async () => {
           await api.post('/lost-found', { ...lost, room_id: lost.room_id ? Number(lost.room_id) : null }); setLost(null); lf.reload();

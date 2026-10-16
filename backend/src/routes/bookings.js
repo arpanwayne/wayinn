@@ -11,6 +11,7 @@ import { postRoomNights, folioTotals, loadFolio } from '../lib/folio.js';
 import { guestSchema, createGuest } from './guests.js';
 import { issueInvoice } from './folios.js';
 import { queueNotification } from '../lib/notify.js';
+import { taxOn, taxSettings, roomTaxRate } from '../lib/money.js';
 
 const r = Router();
 r.use(['/bookings', '/stays', '/calendar', '/frontdesk', '/availability'], requireStaff);
@@ -180,6 +181,18 @@ r.post('/bookings', requirePerm('bookings.create'), async (req, res) => {
 // ---------------------------------------------------------------
 // Read
 // ---------------------------------------------------------------
+/** What the booking is really doing, from its stays: the stored status only knows requested/confirmed/cancelled. */
+export function bookingDisplayStatus(status, stayStatuses) {
+  if (status === 'cancelled' || status === 'requested') return status;
+  const live = stayStatuses.filter((x) => x !== 'cancelled');
+  if (!live.length) return status;
+  if (live.includes('checked_in')) return 'checked_in';
+  if (live.every((x) => x === 'checked_out')) return 'checked_out';
+  if (live.every((x) => x === 'no_show')) return 'no_show';
+  if (live.includes('checked_out')) return 'checked_in'; // part of the group has left, the rest are still to come
+  return status;
+}
+
 async function loadBooking(hotelId, id) {
   const booking = await one(
     `SELECT b.*, g.full_name AS guest_name, g.phone AS guest_phone, g.email AS guest_email, u.name AS created_by_name
@@ -192,6 +205,7 @@ async function loadBooking(hotelId, id) {
        JOIN guests g ON g.id = s.guest_id LEFT JOIN folios f ON f.stay_id = s.id
       WHERE s.booking_id = $1 ORDER BY s.id`, [id]);
   for (const s of booking.stays) if (s.folio_id) s.folio_totals = await folioTotals({ one }, s.folio_id);
+  booking.display_status = bookingDisplayStatus(booking.status, booking.stays.map((s) => s.status));
   return booking;
 }
 
@@ -205,16 +219,20 @@ r.get('/bookings', requirePerm('bookings.view'), async (req, res) => {
   if (to) { vals.push(to); conds.push(`EXISTS (SELECT 1 FROM stays s WHERE s.booking_id = b.id AND s.check_in_date < $${vals.length})`); }
   if (q) {
     vals.push(`%${String(q).toLowerCase()}%`);
-    conds.push(`(lower(b.ref) LIKE $${vals.length} OR lower(g.full_name) LIKE $${vals.length} OR g.phone LIKE $${vals.length})`);
+    const digits = String(q).replace(/\D/g, '');
+    vals.push(digits.length >= 3 ? `%${digits}%` : null);
+    conds.push(`(lower(b.ref) LIKE $${vals.length - 1} OR lower(g.full_name) LIKE $${vals.length - 1} OR g.phone LIKE $${vals.length - 1}
+                 OR ($${vals.length}::text IS NOT NULL AND regexp_replace(COALESCE(g.phone,''), '\\D', '', 'g') LIKE $${vals.length}))`);
   }
-  res.json(await many(
+  const rows = await many(
     `SELECT b.*, g.full_name AS guest_name, g.phone AS guest_phone,
             min(s.check_in_date) AS check_in_date, max(s.check_out_date) AS check_out_date, count(s.id)::int AS room_count,
             string_agg(DISTINCT r.number, ', ') AS rooms, string_agg(DISTINCT s.status, ',') AS stay_statuses
        FROM bookings b JOIN guests g ON g.id = b.guest_id
        LEFT JOIN stays s ON s.booking_id = b.id LEFT JOIN rooms r ON r.id = s.room_id
       WHERE ${conds.join(' AND ')}
-      GROUP BY b.id, g.full_name, g.phone ORDER BY min(s.check_in_date) DESC NULLS LAST, b.id DESC LIMIT 200`, vals));
+      GROUP BY b.id, g.full_name, g.phone ORDER BY min(s.check_in_date) DESC NULLS LAST, b.id DESC LIMIT 200`, vals);
+  res.json(rows.map((b) => ({ ...b, display_status: bookingDisplayStatus(b.status, (b.stay_statuses || '').split(',')) })));
 });
 
 r.get('/bookings/:id', requirePerm('bookings.view'), async (req, res) => {
@@ -273,10 +291,13 @@ r.post('/bookings/:id/cancel', requirePerm('bookings.cancel'), async (req, res) 
     await db.query(`UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = $2 WHERE id = $1`, [id, b.reason]);
     if (b.cancellation_fee_paise > 0) {
       const f = await db.one(`SELECT f.id FROM folios f JOIN stays s ON s.id = f.stay_id WHERE s.booking_id = $1 ORDER BY f.id LIMIT 1`, [id]);
+      const ts = taxSettings(req.hotel);
       await db.query(
-        `INSERT INTO folio_lines (hotel_id, folio_id, category, description, unit_price_paise, amount_paise, business_date, source_type, created_by)
-         VALUES ($1,$2,'service','Cancellation charge',$3,$3,$4,'manual',$5)`,
-        [req.hotelId, f.id, b.cancellation_fee_paise, hotelToday(req.hotel.timezone), req.user.id]);
+        `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, unit_price_paise, amount_paise, tax_rate, tax_paise,
+                                  business_date, source_type, created_by)
+         VALUES ($1,$2,'service','Cancellation charge',$3,$4,$4,$5,$6,$7,'manual',$8)`,
+        [req.hotelId, f.id, ts.service_sac, b.cancellation_fee_paise, ts.service_rate, taxOn(b.cancellation_fee_paise, ts.service_rate),
+          hotelToday(req.hotel.timezone), req.user.id]);
     }
     await audit(req, 'booking.cancelled', 'booking', id, b, db);
   });
@@ -474,9 +495,15 @@ r.post('/stays/:id/no-show', requirePerm('bookings.cancel'), async (req, res) =>
     if (st.check_in_date > today) throw badRequest('Arrival date has not come yet');
     await db.query(`UPDATE stays SET status = 'no_show' WHERE id = $1`, [id]);
     if (b.charge_first_night) {
+      // A forfeited first night is taxed like the room tariff it replaces.
+      const ts = taxSettings(req.hotel);
+      const tariff = Number(st.nightly_rate_paise) + Number(st.extra_person_paise || 0);
+      const rate = roomTaxRate(req.hotel, tariff);
       await db.query(
-        `INSERT INTO folio_lines (hotel_id, folio_id, category, description, unit_price_paise, amount_paise, business_date, source_type, created_by)
-         VALUES ($1,$2,'service','No-show charge',$3,$3,$4,'manual',$5)`, [req.hotelId, st.folio_id, st.nightly_rate_paise, today, req.user.id]);
+        `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, unit_price_paise, amount_paise, tax_rate, tax_paise,
+                                  business_date, source_type, created_by)
+         VALUES ($1,$2,'service','No-show charge',$3,$4,$4,$5,$6,$7,'manual',$8)`,
+        [req.hotelId, st.folio_id, ts.room_sac, tariff, rate, taxOn(tariff, rate), today, req.user.id]);
     }
     await audit(req, 'stay.no_show', 'stay', id, { booking_id: st.booking_id, charged: b.charge_first_night }, db);
     return st;
@@ -504,7 +531,7 @@ r.get('/calendar', requirePerm('bookings.view'), async (req, res) => {
 
 r.get('/frontdesk', requirePerm('bookings.view'), async (req, res) => {
   const today = hotelToday(req.hotel.timezone);
-  const base = `SELECT s.id, s.booking_id, b.ref, s.room_id, r.number AS room_number, r.hk_status, rt.name AS room_type,
+  const base = `SELECT s.id, s.booking_id, b.ref, s.room_id, s.room_type_id, s.guest_id, r.number AS room_number, r.hk_status, rt.name AS room_type,
                        s.check_in_date, s.check_out_date, s.status, s.adults, s.children, g.full_name AS guest_name, g.phone AS guest_phone,
                        b.special_requests, f.id AS folio_id
                   FROM stays s JOIN bookings b ON b.id = s.booking_id JOIN guests g ON g.id = s.guest_id

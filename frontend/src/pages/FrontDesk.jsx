@@ -49,7 +49,7 @@ function KeyRack({ counts: c, rooms }) {
                 <div className="w-14 shrink-0 pt-2 text-xs text-night-100">{fl ? `Floor ${fl}` : 'Rooms'}</div>
                 <div className="flex flex-wrap gap-1.5">
                   {rooms.filter((r) => (r.floor || '') === fl).map((r) => (
-                    <Link key={r.id} to={r.booking_id ? `/bookings/${r.booking_id}` : '/rooms'} title={`${r.number} · ${r.room_type} · ${r.guest_name || r.arriving_guest || r.display_status.replace(/_/g, ' ')}`}
+                    <Link key={r.id} to={`/rooms?room=${r.id}`} title={`${r.number} · ${r.room_type} · ${r.guest_name || r.arriving_guest || r.display_status.replace(/_/g, ' ')}`}
                       className={`num relative flex h-10 w-12 items-center justify-center rounded-lg text-sm transition hover:-translate-y-0.5 ${KEY[r.display_status] || KEY.available}`}>
                       {r.number}
                       {r.due_out && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-ink-900 ring-2 ring-white" />}

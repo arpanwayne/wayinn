@@ -177,11 +177,26 @@ r.get('/requests', requirePerm('requests.view', 'hk.view'), async (req, res) => 
 
 r.patch('/requests/:id', requirePerm('requests.view', 'hk.work'), async (req, res) => {
   const b = parse(z.object({ status: z.enum(['acknowledged', 'done', 'cancelled']) }), req.body);
-  const row = await one(
-    `UPDATE service_requests SET status = $1, assigned_to = COALESCE(assigned_to, $2), resolved_at = CASE WHEN $1 IN ('done','cancelled') THEN now() ELSE NULL END
-      WHERE id = $3 AND hotel_id = $4 RETURNING *`, [b.status, req.user.id, idParam(req.params.id), req.hotelId]);
-  if (!row) throw notFound();
-  await audit(req, 'request.updated', 'service_request', row.id, b);
+  const row = await tx(async (db) => {
+    const sr = await db.one(
+      `UPDATE service_requests SET status = $1, assigned_to = COALESCE(assigned_to, $2), resolved_at = CASE WHEN $1 IN ('done','cancelled') THEN now() ELSE NULL END
+        WHERE id = $3 AND hotel_id = $4 RETURNING *`, [b.status, req.user.id, idParam(req.params.id), req.hotelId]);
+    if (!sr) throw notFound();
+    // Closing the guest request must also close the housekeeping / maintenance job raised for it,
+    // otherwise the job stays open forever and keeps raising "pending over N min" alerts.
+    if (b.status === 'done') {
+      await db.query(`UPDATE hk_tasks SET status = 'done', completed_at = now(), completed_by = $2, started_at = COALESCE(started_at, now())
+                       WHERE service_request_id = $1 AND status IN ('pending','in_progress')`, [sr.id, req.user.id]);
+      await db.query(`UPDATE maintenance_requests SET status = 'resolved', resolved_at = now(), resolved_by = $2,
+                             resolution_notes = COALESCE(resolution_notes, 'Closed with guest request')
+                       WHERE service_request_id = $1 AND status IN ('open','in_progress')`, [sr.id, req.user.id]);
+    } else if (b.status === 'cancelled') {
+      await db.query(`UPDATE hk_tasks SET status = 'cancelled' WHERE service_request_id = $1 AND status IN ('pending','in_progress')`, [sr.id]);
+      await db.query(`UPDATE maintenance_requests SET status = 'cancelled' WHERE service_request_id = $1 AND status IN ('open','in_progress')`, [sr.id]);
+    }
+    await audit(req, 'request.updated', 'service_request', sr.id, b, db);
+    return sr;
+  });
   res.json(row);
 });
 

@@ -119,7 +119,14 @@ export default function Platform() {
       </Modal>
       <Modal open={!!planForm} onClose={() => setPlanForm(null)} title={planForm?.id ? 'Edit plan' : 'New plan'}
         footer={<><button className="btn-secondary" onClick={() => setPlanForm(null)}>Cancel</button><button className="btn-primary" onClick={() => run(async () => {
-          const body = { code: planForm.code, name: planForm.name, max_rooms: Number(planForm.max_rooms), max_staff: planForm.max_staff ? Number(planForm.max_staff) : null, price_monthly_paise: Math.round(Number(planForm.price) * 100) };
+          const missing = [];
+          if (!planForm.code?.trim() || planForm.code.trim().length < 2) missing.push('Code (at least 2 characters)');
+          if (!planForm.name?.trim() || planForm.name.trim().length < 2) missing.push('Name (at least 2 characters)');
+          if (!(Number(planForm.max_rooms) > 0)) missing.push('Max rooms (a number above 0)');
+          if (planForm.max_staff && !(Number(planForm.max_staff) > 0)) missing.push('Max staff (a number above 0, or leave empty for unlimited)');
+          if (planForm.price === '' || planForm.price === null || Number.isNaN(Number(planForm.price)) || Number(planForm.price) < 0) missing.push('Price ₹/month (0 or more)');
+          if (missing.length) throw new Error(`Please fill in: ${missing.join(', ')}`);
+          const body = { code: planForm.code.trim(), name: planForm.name.trim(), max_rooms: Number(planForm.max_rooms), max_staff: planForm.max_staff ? Number(planForm.max_staff) : null, price_monthly_paise: Math.round(Number(planForm.price) * 100) };
           if (planForm.id) await api.put(`/platform/plans/${planForm.id}`, body, P); else await api.post('/platform/plans', body, P);
           setPlanForm(null); load();
         }, 'Plan saved')}>Save</button></>}>

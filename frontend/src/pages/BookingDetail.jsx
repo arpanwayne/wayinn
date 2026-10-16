@@ -4,7 +4,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { fmtDate, fmtDateTime, rupees, label, toPaise, addDays, todayStr } from '../lib/format.js';
-import { PageHeader, Badge, Loading, Modal, Field, ReasonDialog, useAction, ErrorBox } from '../components/ui.jsx';
+import { PageHeader, Badge, Loading, Modal, Field, ReasonDialog, ConfirmDialog, useAction, ErrorBox } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
 
 function ModifyStay({ stay, open, onClose, onDone }) {
@@ -78,6 +78,7 @@ export default function BookingDetail() {
   const [cancelStay, setCancelStay] = useState(null);
   const [cancelBooking, setCancelBooking] = useState(false);
   const [fee, setFee] = useState('');
+  const [noShow, setNoShow] = useState(null);
 
   if (error) return <ErrorBox error={error} />;
   if (!b) return <Loading />;
@@ -86,7 +87,7 @@ export default function BookingDetail() {
     <div className="space-y-5">
       <PageHeader title={`Booking ${b.ref}`} subtitle={`${b.guest_name} · ${b.guest_phone || 'no phone'} · ${label(b.source)} · created ${fmtDateTime(b.created_at)}${b.created_by_name ? ` by ${b.created_by_name}` : ''}`}
         actions={<>
-          <Badge status={b.status} />
+          <Badge status={b.display_status || b.status} />
           {b.status === 'requested' && can('bookings.create') && <button className="btn-primary" onClick={() => run(async () => { await api.post(`/bookings/${id}/confirm`); reload(); }, 'Booking confirmed')}>Confirm booking</button>}
           {b.status !== 'cancelled' && can('bookings.cancel') && !b.stays.some((s) => ['checked_in', 'checked_out'].includes(s.status)) &&
             <button className="btn-secondary" onClick={() => setCancelBooking(true)}>Cancel booking</button>}
@@ -123,7 +124,7 @@ export default function BookingDetail() {
                     {s.folio_id && can('folio.view') && <Link className="btn-secondary btn-sm" to={`/folios/${s.folio_id}`}>Bill</Link>}
                     {['reserved', 'tentative'].includes(s.status) && can('bookings.cancel') && b.stays.length > 1 && <button className="btn-ghost btn-sm text-red-600" onClick={() => setCancelStay(s)}>Cancel</button>}
                     {s.status === 'reserved' && s.check_in_date <= today && can('bookings.cancel') &&
-                      <button className="btn-ghost btn-sm" onClick={() => run(async () => { await api.post(`/stays/${s.id}/no-show`, { charge_first_night: confirm('Charge first night as no-show fee?') }); reload(); }, 'Marked no-show')}>No-show</button>}
+                      <button className="btn-ghost btn-sm" onClick={() => setNoShow(s)}>No-show</button>}
                   </div>
                 </td>
               </tr>
@@ -142,6 +143,10 @@ export default function BookingDetail() {
       <CheckInDialog stay={checkIn} open={!!checkIn} onClose={() => { setCheckIn(null); reload(); }} onDone={reload} />
       <CheckOutDialog stay={checkOut} open={!!checkOut} onClose={() => setCheckOut(null)} onDone={reload} />
       <ModifyStay stay={modify} open={!!modify} onClose={() => setModify(null)} onDone={reload} />
+      <ConfirmDialog open={!!noShow} title={`No-show · ${noShow?.guest_name || ''}`} message="Charge the first night as a no-show fee? GST is added on the charge."
+        yesLabel="Charge first night" noLabel="No charge" onClose={() => setNoShow(null)}
+        onYes={() => run(async () => { await api.post(`/stays/${noShow.id}/no-show`, { charge_first_night: true }); setNoShow(null); reload(); }, 'Marked no-show')}
+        onNo={() => run(async () => { await api.post(`/stays/${noShow.id}/no-show`, { charge_first_night: false }); setNoShow(null); reload(); }, 'Marked no-show')} />
       <ReasonDialog open={!!cancelStay} title={`Cancel room ${cancelStay?.room_number || ''}`} onClose={() => setCancelStay(null)}
         onSubmit={(reason) => run(async () => { await api.post(`/stays/${cancelStay.id}/cancel`, { reason }); setCancelStay(null); reload(); }, 'Room cancelled')} />
       <ReasonDialog open={cancelBooking} title="Cancel booking" confirmLabel="Cancel booking" onClose={() => setCancelBooking(false)}

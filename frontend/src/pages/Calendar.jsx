@@ -14,6 +14,22 @@ export default function Calendar() {
   const nav = useNavigate();
   const days = useMemo(() => Array.from({ length: span }, (_, i) => addDays(from, i)), [from, span]);
   const CELL = span > 14 ? 40 : 64;
+  // Bookings with no room yet still take inventory: show them as bars in an "Unassigned" block, stacked so none overlap.
+  const lanes = useMemo(() => {
+    const out = [];
+    for (const s of data?.unallocated || []) {
+      let lane = out.find((l) => l.every((x) => x.check_out_date <= s.check_in_date || x.check_in_date >= s.check_out_date));
+      if (!lane) { lane = []; out.push(lane); }
+      lane.push(s);
+    }
+    return out;
+  }, [data]);
+  const bar = (s) => {
+    const start = s.check_in_date < from ? from : s.check_in_date;
+    const end = s.check_out_date > to ? to : s.check_out_date;
+    const cut = s.check_in_date < from;
+    return { left: cut ? 140 : 140 + nights(from, start) * CELL + CELL / 2, width: Math.max(nights(start, end) * CELL - 4, 12) + (cut ? CELL / 2 : 0) };
+  };
 
   return (
     <div>
@@ -41,6 +57,27 @@ export default function Calendar() {
                 );
               })}
             </div>
+            {lanes.length > 0 && (
+              <div>
+                <div className="border-b border-ink-100 bg-amber-50 px-3 py-1 text-[11px] font-semibold tracking-wide text-amber-600">NO ROOM ASSIGNED YET · {data.unallocated.length}</div>
+                {lanes.map((lane, li) => (
+                  <div key={li} className="relative flex h-10 border-b border-ink-50">
+                    <div className="flex w-[140px] shrink-0 items-center px-3 text-sm font-semibold text-ink-500">Unassigned</div>
+                    {days.map((d) => <div key={d} style={{ width: CELL }} className="shrink-0 border-l border-ink-50" />)}
+                    {lane.map((s) => {
+                      const b = bar(s);
+                      return (
+                        <Link key={s.id} to={`/bookings/${s.booking_id}`} title={`${s.guest_name} · ${s.ref} · ${fmtDate(s.check_in_date)}–${fmtDate(s.check_out_date)} · no room yet`}
+                          style={{ left: b.left, width: b.width }}
+                          className={`absolute top-1.5 flex h-7 items-center overflow-hidden rounded-lg border border-dashed border-amber-400 px-2 text-xs font-semibold ${COLORS[s.status] || 'bg-amber-100 text-ink-900'}`}>
+                          <span className="truncate">{s.guest_name}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
             {data.rooms.map((room, idx) => {
               const prev = data.rooms[idx - 1];
               const stays = data.stays.filter((s) => s.room_id === room.id);
