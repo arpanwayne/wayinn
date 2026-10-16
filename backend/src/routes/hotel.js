@@ -6,6 +6,7 @@ import { requireStaff, requirePerm } from '../middleware/auth.js';
 import { PERMISSIONS, ROLE_PERMISSIONS } from '../lib/permissions.js';
 import { taxSettings } from '../lib/money.js';
 import { audit } from '../lib/audit.js';
+import { badRequest } from '../lib/errors.js';
 
 const r = Router();
 r.use('/hotel', requireStaff);
@@ -50,6 +51,16 @@ const settingsSchema = z.object({
 
 r.put('/hotel', requirePerm('hotel.settings'), async (req, res) => {
   const body = parse(settingsSchema, req.body);
+  // GST state code is the first two digits of the GSTIN; CGST/SGST vs IGST depends on it.
+  const gstin = body.gstin !== undefined ? body.gstin || null : req.hotel.gstin;
+  const gstState = gstin && /^\d{2}/.test(gstin) ? gstin.slice(0, 2) : null;
+  if (body.state_code !== undefined && body.state_code !== null && body.state_code !== '') {
+    body.state_code = String(body.state_code).trim().padStart(2, '0');
+    if (!/^\d{2}$/.test(body.state_code)) throw badRequest('GST state code must be 2 digits');
+    if (gstState && body.state_code !== gstState) throw badRequest(`GST state code must be ${gstState} to match the GSTIN`);
+  } else if (gstState && (body.gstin !== undefined || body.state_code !== undefined || !req.hotel.state_code)) {
+    body.state_code = gstState;
+  }
   const { settings, ...cols } = body;
   const sets = [];
   const vals = [];

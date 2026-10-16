@@ -24,7 +24,7 @@ function Ring({ pct, label: l }) {
   );
 }
 
-function SplitBar({ parts }) {
+function SplitBar({ parts, discount = 0 }) {
   const total = parts.reduce((a, [, v]) => a + Math.max(0, Number(v) || 0), 0);
   return (
     <div className="mt-4 max-w-xl">
@@ -33,6 +33,7 @@ function SplitBar({ parts }) {
       </div>
       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-night-100">
         {parts.map(([l, v, c]) => <span key={l} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${c}`} />{l} <span className="num text-white">{rupees0(v)}</span></span>)}
+        {Number(discount) !== 0 && <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-white/60" />Discounts <span className="num text-white">−{rupees0(Math.abs(discount))}</span></span>}
       </div>
     </div>
   );
@@ -84,7 +85,7 @@ export default function Reports() {
   const d = dash.data;
   if (!d) return <Loading />;
   const collToday = (d.collections_today || []).reduce((a, x) => a + Number(x.amount_paise), 0);
-  const revToday = d.revenue_today.room + d.revenue_today.food + d.revenue_today.other + d.revenue_today.discount;
+  const revToday = d.revenue_today ? d.revenue_today.total : 0;
   return (
     <div className="space-y-5">
       <PageHeader title="Owner dashboard" subtitle={`Today · ${fmtDate(d.today)}`}
@@ -98,7 +99,7 @@ export default function Reports() {
             <div>
               <div className="text-night-100">Revenue today</div>
               <div className="num mt-1 text-5xl leading-none sm:text-6xl">{rupees0(revToday)}</div>
-              <SplitBar parts={[['Rooms', d.revenue_today.room, 'bg-white'], ['Food', d.revenue_today.food, 'bg-amber-300'], ['Other', d.revenue_today.other, 'bg-ink-900']]} />
+              <SplitBar parts={[['Rooms', d.revenue_today.room, 'bg-white'], ['Food', d.revenue_today.food, 'bg-amber-300'], ['Other', d.revenue_today.other, 'bg-ink-900']]} discount={d.revenue_today.discount} />
               <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
                 <HeroFact label="Collected today" value={rupees0(collToday)} sub={(d.collections_today || []).map((c) => `${label(c.method)} ${rupees0(c.amount_paise)}`).join(', ')} />
                 <HeroFact label="Month to date" value={rupees0(d.revenue_month.total)} sub={`Rooms ${rupees0(d.revenue_month.room)}`} />
