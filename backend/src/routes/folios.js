@@ -58,6 +58,14 @@ r.get('/folios/:id', requirePerm('folio.view'), async (req, res) => {
   res.json(f);
 });
 
+// SAC for manual charges when the staff did not type one.
+function defaultSac(ts, category, description = '') {
+  if (category === 'food') return ts.food_sac;
+  if (category === 'extra_person') return ts.room_sac;
+  if (/laundry|dry ?clean|wash|iron|press/i.test(description)) return '999711'; // washing, cleaning and dyeing services
+  return ts.service_sac;
+}
+
 // Manual charge (extra bed, laundry, minibar, etc.)
 r.post('/folios/:id/charges', requirePerm('folio.charge'), async (req, res) => {
   const id = idParam(req.params.id);
@@ -71,6 +79,7 @@ r.post('/folios/:id/charges', requirePerm('folio.charge'), async (req, res) => {
   }), req.body);
   const ts = taxSettings(req.hotel);
   const rate = b.tax_rate ?? (b.category === 'food' ? ts.food_rate : ts.service_rate);
+  const sac = b.hsn_sac || defaultSac(ts, b.category, b.description);
   const amount = Math.round(b.unit_price_paise * b.quantity);
   const line = await tx(async (db) => {
     const f = await getOpenFolio(db, req.hotelId, id); assertOpen(f);
@@ -78,7 +87,7 @@ r.post('/folios/:id/charges', requirePerm('folio.charge'), async (req, res) => {
       `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, quantity, unit_price_paise, amount_paise,
                                 tax_rate, tax_paise, business_date, source_type, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'manual',$12) RETURNING *`,
-      [req.hotelId, id, b.category, b.description, b.hsn_sac || null, b.quantity, b.unit_price_paise, amount, rate, taxOn(amount, rate),
+      [req.hotelId, id, b.category, b.description, sac, b.quantity, b.unit_price_paise, amount, rate, taxOn(amount, rate),
         hotelToday(req.hotel.timezone), req.user.id]);
     await audit(req, 'folio.charge_added', 'folio', id, { line_id: l.id, amount_paise: amount, description: b.description }, db);
     return l;
@@ -104,14 +113,24 @@ r.post('/folios/:id/discount', requirePerm('folio.discount'), async (req, res) =
     if (baseAmt <= 0) throw badRequest('Nothing to discount');
     const amt = b.amount_paise ?? Math.round((baseAmt * b.percent) / 100);
     if (amt > baseAmt) throw badRequest('Discount exceeds the charges');
-    // Discount reduces taxable value → use weighted tax rate of discounted lines
-    const weighted = base.reduce((a, l) => a + l.amount_paise * Number(l.tax_rate), 0) / baseAmt;
-    const rate = Math.round(weighted * 100) / 100;
-    const l = await db.one(
-      `INSERT INTO folio_lines (hotel_id, folio_id, category, description, quantity, unit_price_paise, amount_paise, tax_rate, tax_paise,
-                                business_date, source_type, created_by)
-       VALUES ($1,$2,'discount',$3,1,$4,$4,$5,$6,$7,'manual',$8) RETURNING *`,
-      [req.hotelId, id, `Discount — ${b.reason}`, -amt, rate, -taxOn(amt, rate), hotelToday(req.hotel.timezone), req.user.id]);
+    // A discount reduces the taxable value of each charge at that charge's own GST rate, so it is split per rate
+    // (e.g. 5% and 18%) instead of being booked at a made-up blended rate.
+    const byRate = new Map();
+    for (const x of base) byRate.set(Number(x.tax_rate), (byRate.get(Number(x.tax_rate)) || 0) + x.amount_paise);
+    const groups = [...byRate.entries()].sort((a, c) => a[0] - c[0]);
+    const shares = groups.map(([rate, amount]) => ({ rate, amount, share: Math.floor((amt * amount) / baseAmt) }));
+    let left = amt - shares.reduce((a, x) => a + x.share, 0);
+    for (const x of [...shares].sort((a, c) => c.amount - a.amount)) { if (left <= 0) break; x.share += 1; left -= 1; }
+    const created = [];
+    for (const x of shares.filter((y) => y.share > 0)) {
+      created.push(await db.one(
+        `INSERT INTO folio_lines (hotel_id, folio_id, category, description, quantity, unit_price_paise, amount_paise, tax_rate, tax_paise,
+                                  business_date, source_type, created_by)
+         VALUES ($1,$2,'discount',$3,1,$4,$4,$5,$6,$7,'manual',$8) RETURNING *`,
+        [req.hotelId, id, `Discount — ${b.reason}${shares.length > 1 ? ` (${x.rate}% items)` : ''}`, -x.share, x.rate, -taxOn(x.share, x.rate),
+          hotelToday(req.hotel.timezone), req.user.id]));
+    }
+    const l = { ...created[0], lines: created };
     await audit(req, 'folio.discount', 'folio', id,
       { line_id: l.id, amount_paise: amt, percent: b.percent ?? Math.round((amt / baseAmt) * 10000) / 100, reason: b.reason }, db);
     return l;
@@ -198,7 +217,10 @@ r.get('/folios/:id/invoice', requirePerm('folio.view'), async (req, res) => {
   const f = await loadFolio({ one, many }, req.hotelId, idParam(req.params.id));
   if (!f) throw notFound();
   const h = req.hotel;
-  const guestGstin = f.bill_to_gstin || (f.guest_id ? (await one('SELECT company_gstin FROM guests WHERE id = $1', [f.guest_id]))?.company_gstin : null);
+  const guest = f.guest_id ? await one('SELECT company_name, company_gstin FROM guests WHERE id = $1', [f.guest_id]) : null;
+  const guestGstin = f.bill_to_gstin || guest?.company_gstin || null;
+  // With a company GSTIN the invoice is made out to the company, not the person who stays.
+  const billName = f.bill_to_name || (guestGstin && guest?.company_name) || f.guest_name;
   const interState = !!(guestGstin && h.gstin && guestGstin.slice(0, 2) !== h.gstin.slice(0, 2));
   const live = f.lines.filter((l) => !l.voided_at);
   res.json({
@@ -206,7 +228,7 @@ r.get('/folios/:id/invoice', requirePerm('folio.view'), async (req, res) => {
     hotel: { name: h.name, legal_name: h.legal_name, gstin: h.gstin, address: h.address, city: h.city, state: h.state,
       state_code: h.state_code, phone: h.phone, email: h.email, footer: h.settings?.invoice_footer },
     invoice_no: f.invoice_no, invoiced_at: f.invoiced_at,
-    bill_to: { name: f.bill_to_name || f.guest_name, gstin: guestGstin, phone: f.guest_phone },
+    bill_to: { name: billName, gstin: guestGstin, phone: f.guest_phone, guest_name: billName !== f.guest_name ? f.guest_name : null },
     stay: f.stay_id ? { room: f.room_number, check_in: f.check_in_date, check_out: f.check_out_date, booking_ref: f.booking_ref } : null,
     lines: live, payments: f.payments.filter((p) => !p.voided_at), totals: f.totals,
     tax_breakup: taxBreakup(live, interState), inter_state: interState,

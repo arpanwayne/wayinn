@@ -16,6 +16,7 @@ export const DEFAULT_TAX_SETTINGS = {
   service_rate: 18,
   room_sac: '996311',
   food_sac: '996332',
+  service_sac: '999799', // other services n.e.c. (default for manual charges)
   prices_include_tax: false,
 };
 

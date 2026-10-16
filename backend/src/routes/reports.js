@@ -43,10 +43,13 @@ async function dashboardData(req) {
     one(`SELECT count(*) FILTER (WHERE active)::int AS total, count(*) FILTER (WHERE active AND hk_status = 'out_of_order')::int AS ooo,
                 count(*) FILTER (WHERE active AND hk_status = 'dirty')::int AS dirty FROM rooms WHERE hotel_id = $1`, [h]),
     one(`SELECT count(*)::int AS n FROM stays WHERE hotel_id = $1 AND status = 'checked_in'`, [h]),
-    one(`SELECT count(*) FILTER (WHERE status = 'reserved')::int AS pending, count(*) FILTER (WHERE status = 'checked_in' AND check_in_date = $2)::int AS done
-           FROM stays WHERE hotel_id = $1 AND check_in_date = $2`, [h, today]),
-    one(`SELECT count(*) FILTER (WHERE status = 'checked_in')::int AS pending, count(*) FILTER (WHERE status = 'checked_out')::int AS done
-           FROM stays WHERE hotel_id = $1 AND check_out_date = $2 AND status IN ('checked_in','checked_out')`, [h, today]),
+    // Arrivals: checked in today (by the actual check-in time) of those expected (checked in today + still waiting, incl. overdue).
+    one(`SELECT count(*) FILTER (WHERE status = 'reserved' AND check_in_date <= $2)::int AS pending,
+                count(*) FILTER (WHERE status IN ('checked_in','checked_out') AND (checked_in_at AT TIME ZONE ${tzSql(req)})::date = $2)::int AS done
+           FROM stays WHERE hotel_id = $1`, [h, today]),
+    one(`SELECT count(*) FILTER (WHERE status = 'checked_in' AND check_out_date <= $2)::int AS pending,
+                count(*) FILTER (WHERE status = 'checked_out' AND (checked_out_at AT TIME ZONE ${tzSql(req)})::date = $2)::int AS done
+           FROM stays WHERE hotel_id = $1`, [h, today]),
     one(`SELECT COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('room','extra_person')),0) AS room,
                 COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('food','room_service')),0) AS food,
                 COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('service','extra')),0) AS other,
@@ -147,7 +150,7 @@ r.get('/reports/revenue-by-department', requirePerm('reports.financial'), async 
 r.get('/reports/collections', requirePerm('reports.financial'), async (req, res) => {
   const { from, to } = range(req);
   out(req, res, `collections-${from}-${to}`, await many(
-    `SELECT p.id, (p.created_at AT TIME ZONE ${tzSql(req)}) AS received_at, p.kind, p.method, p.amount_paise, p.reference,
+    `SELECT p.id, p.created_at AS received_at, p.kind, p.method, p.amount_paise, p.reference,
             f.kind AS bill_type, f.invoice_no, g.full_name AS guest, b.ref AS booking_ref, u.name AS received_by, p.voided_at, p.void_reason
        FROM payments p JOIN folios f ON f.id = p.folio_id LEFT JOIN guests g ON g.id = f.guest_id LEFT JOIN bookings b ON b.id = f.booking_id
        LEFT JOIN users u ON u.id = p.received_by
@@ -177,7 +180,7 @@ r.get('/reports/food-sales', requirePerm('reports.view'), async (req, res) => {
     many(`SELECT order_type, settlement, count(*)::int AS orders, SUM(total_paise) AS total_paise
             FROM orders WHERE hotel_id = $1 AND status <> 'cancelled' AND (created_at AT TIME ZONE ${tz})::date BETWEEN $2 AND $3
            GROUP BY order_type, settlement ORDER BY order_type`, [req.hotelId, from, to]),
-    many(`SELECT o.order_no, o.total_paise, o.cancel_reason, (o.status_changed_at AT TIME ZONE ${tz}) AS cancelled_at
+    many(`SELECT o.order_no, o.total_paise, o.cancel_reason, o.status_changed_at AS cancelled_at
             FROM orders o WHERE o.hotel_id = $1 AND o.status = 'cancelled' AND (o.created_at AT TIME ZONE ${tz})::date BETWEEN $2 AND $3
            ORDER BY o.id DESC`, [req.hotelId, from, to]),
   ]);

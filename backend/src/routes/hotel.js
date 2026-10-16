@@ -38,6 +38,7 @@ const settingsSchema = z.object({
       service_rate: z.number().min(0).max(40).optional(),
       room_sac: z.string().optional(),
       food_sac: z.string().optional(),
+      service_sac: z.string().optional(),
     }).optional(),
     qr_orders_require_accept: z.boolean().optional(),
     qr_show_bill: z.boolean().optional(),
@@ -90,8 +91,14 @@ r.get('/hotel/audit', requirePerm('audit.view'), async (req, res) => {
   const { entity_type, entity_id, limit = 200 } = req.query;
   const vals = [req.hotelId];
   let where = 'a.hotel_id = $1';
-  if (entity_type) { vals.push(entity_type); where += ` AND a.entity_type = $${vals.length}`; }
-  if (entity_id) { vals.push(entity_id); where += ` AND a.entity_id = $${vals.length}`; }
+  if (entity_type === 'booking' && entity_id) {
+    // A booking's history also covers its stays (check-in, modify, cancel, no-show…), which are logged against the stay.
+    vals.push(Number(entity_id), String(entity_id));
+    where += ` AND ((a.entity_type = 'booking' AND a.entity_id = $${vals.length - 1}) OR (a.entity_type = 'stay' AND a.data->>'booking_id' = $${vals.length}))`;
+  } else {
+    if (entity_type) { vals.push(entity_type); where += ` AND a.entity_type = $${vals.length}`; }
+    if (entity_id) { vals.push(entity_id); where += ` AND a.entity_id = $${vals.length}`; }
+  }
   vals.push(Math.min(Number(limit) || 200, 1000));
   res.json(await many(
     `SELECT a.*, u.name AS actor_name FROM audit_logs a

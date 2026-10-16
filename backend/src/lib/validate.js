@@ -6,7 +6,10 @@ export function parse(schema, data) {
   if (!r.success) {
     const fields = {};
     for (const i of r.error.issues) fields[i.path.join('.') || '_'] = i.message;
-    throw badRequest('Validation failed', fields);
+    // Name the fields in the message itself so the user sees what to fix, not just "Validation failed".
+    const pretty = (k) => (k === '_' ? '' : `${k.split('.').pop().replace(/_(paise|id)$/, '').replace(/_/g, ' ')}: `);
+    const msg = Object.entries(fields).slice(0, 4).map(([k, m]) => `${pretty(k)}${m}`).join('; ');
+    throw badRequest(`Please check: ${msg}`, fields);
   }
   return r.data;
 }

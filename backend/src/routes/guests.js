@@ -46,10 +46,13 @@ r.get('/guests', requirePerm('guests.view'), async (req, res) => {
   let where = 'g.hotel_id = $1';
   if (q) {
     vals.push(`%${q.toLowerCase()}%`);
-    where += ` AND (lower(g.full_name) LIKE $2 OR g.phone LIKE $2 OR lower(g.email) LIKE $2
+    // Phones are stored as typed ("+91 98765-43210"), so also match on digits only: any run of digits finds the guest.
+    const digits = q.replace(/\D/g, '');
+    vals.push(digits.length >= 3 ? `%${digits}%` : null);
+    where += ` AND (lower(g.full_name) LIKE $2 OR g.phone LIKE $2 OR ($3::text IS NOT NULL AND regexp_replace(COALESCE(g.phone,''), '\\D', '', 'g') LIKE $3) OR lower(g.email) LIKE $2
                OR EXISTS (SELECT 1 FROM bookings b WHERE b.guest_id = g.id AND lower(b.ref) LIKE $2)
                OR EXISTS (SELECT 1 FROM stays s JOIN rooms rm ON rm.id = s.room_id WHERE s.guest_id = g.id
-                          AND s.status = 'checked_in' AND lower(rm.number) = $3))`;
+                          AND s.status = 'checked_in' AND lower(rm.number) = $4))`;
     vals.push(q.toLowerCase());
   }
   const rows = await many(

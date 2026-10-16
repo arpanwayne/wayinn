@@ -4,7 +4,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { rupees0, toPaise } from '../lib/format.js';
-import { PageHeader, Loading, Modal, Field, Tabs, Badge, useAction } from '../components/ui.jsx';
+import { PageHeader, Loading, Modal, Field, Tabs, Badge, PromptDialog, useAction } from '../components/ui.jsx';
 
 function HotelProfile() {
   const { data, reload } = useApi('/hotel');
@@ -135,6 +135,7 @@ function RoomSetup() {
 function MenuSetup() {
   const { data, reload } = useApi('/menu');
   const [item, setItem] = useState(null);
+  const [adding, setAdding] = useState(null); // 'category' | 'station'
   const [run, busy] = useAction();
   if (!data) return <Loading />;
   const parsePriced = (s) => s.split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const [n, p] = x.split(':'); return { name: n.trim(), price_paise: toPaise(p || 0) }; });
@@ -143,9 +144,12 @@ function MenuSetup() {
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary" onClick={() => setItem({ name: '', price: '', category_id: data.categories[0]?.id || '', station_id: data.stations[0]?.id || '', is_veg: true, variants: '', addons: '', available: true, show_on_qr: true, description: '' })}>+ Menu item</button>
-        <button className="btn-secondary" onClick={() => { const n = prompt('Category name'); if (n) run(async () => { await api.post('/menu/categories', { name: n }); reload(); }); }}>+ Category</button>
-        <button className="btn-secondary" onClick={() => { const n = prompt('Kitchen station name (e.g. Tandoor, Bar)'); if (n) run(async () => { await api.post('/stations', { name: n }); reload(); }); }}>+ Station</button>
+        <button className="btn-secondary" onClick={() => setAdding('category')}>+ Category</button>
+        <button className="btn-secondary" onClick={() => setAdding('station')}>+ Station</button>
       </div>
+      <PromptDialog open={!!adding} title={adding === 'category' ? 'New menu category' : 'New kitchen station'} label={adding === 'category' ? 'Category name' : 'Station name (e.g. Tandoor, Bar)'}
+        confirmLabel="Add" onClose={() => setAdding(null)}
+        onSubmit={(name) => run(async () => { await api.post(adding === 'category' ? '/menu/categories' : '/stations', { name }); setAdding(null); reload(); }, 'Added')} />
       {data.categories.map((c) => (
         <div key={c.id} className="card overflow-x-auto">
           <h2 className="p-3">{c.name}</h2>

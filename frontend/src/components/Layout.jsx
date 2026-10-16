@@ -69,12 +69,12 @@ export default function Layout() {
           <aside className="absolute inset-y-0 left-0 w-64" onClick={(e) => e.stopPropagation()}>{sidebar}</aside>
         </div>
       )}
-      <div className="flex-1 lg:pl-60">
+      <div className="min-w-0 flex-1 lg:pl-60">
         <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-ink-100 bg-white/90 px-4 py-2.5 backdrop-blur lg:hidden">
           <button className="btn-ghost btn-sm text-lg" onClick={() => setOpen(true)} aria-label="Menu">☰</button>
           <Logo />
         </header>
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6"><Outlet /></main>
+        <main className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6"><Outlet /></main>
       </div>
     </div>
   );

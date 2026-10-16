@@ -108,6 +108,7 @@ export default function Pos() {
   const [settle, setSettle] = useState(null);
   const [cancel, setCancel] = useState(null);
   const [discount, setDiscount] = useState(null);
+  const [itemAction, setItemAction] = useState(null); // { kind: 'comp' | 'remove', item }
   const [run, busy] = useAction();
 
   const inHouse = useMemo(() => (board.data || []).filter((r) => r.stay_id), [board.data]);
@@ -207,7 +208,10 @@ export default function Pos() {
               <ul className="my-3 space-y-0.5 text-sm">{o.items?.filter((i) => !i.cancelled).map((i, k) => <li key={k}>{i.quantity} × {i.name}{i.variant && ` (${i.variant})`}</li>)}</ul>
               <div className="flex items-center justify-between">
                 <span className="font-semibold tabular-nums">{rupees(o.total_paise)}</span>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap justify-end gap-1">
+                  {o.settlement === 'unsettled' && o.status !== 'cancelled' && <button className="btn-ghost btn-sm" onClick={() => { setAddTo(o); setTab('new'); }}>Add items</button>}
+                  {o.settlement === 'unsettled' && o.status !== 'cancelled' && can('pos.discount') && <button className="btn-ghost btn-sm" onClick={() => setDiscount({ order: o, mode: 'percent', value: '', reason: '' })}>Discount</button>}
+                  {['unsettled', 'room_posted'].includes(o.settlement) && o.status !== 'cancelled' && can('pos.cancel') && <button className="btn-ghost btn-sm text-red-600" onClick={() => setCancel(o)}>Cancel</button>}
                   {NEXT[o.status] && <button className="btn-secondary btn-sm" onClick={() => run(async () => { await api.patch(`/orders/${o.id}/status`, { status: o.order_type === 'room_service' && o.status === 'ready' ? 'out_for_delivery' : NEXT[o.status] }); orders.reload(); })}>
                     → {label(o.order_type === 'room_service' && o.status === 'ready' ? 'out_for_delivery' : NEXT[o.status])}</button>}
                   {o.settlement === 'unsettled' && can('pos.settle') && <button className="btn-primary btn-sm" onClick={() => setSettle(o)}>Settle</button>}
@@ -223,7 +227,7 @@ export default function Pos() {
       <Modal open={!!detail} onClose={() => setDetail(null)} title={detail ? `${detail.order_no} · ${label(detail.order_type)}` : ''} wide
         footer={detail && <>
           {['unsettled', 'room_posted'].includes(detail.settlement) && detail.status !== 'cancelled' && can('pos.cancel') && <button className="btn-ghost text-red-600" onClick={() => setCancel(detail)}>Cancel order</button>}
-          {detail.settlement === 'unsettled' && detail.status !== 'cancelled' && can('pos.discount') && <button className="btn-secondary" onClick={() => setDiscount({ mode: 'percent', value: '', reason: '' })}>Discount</button>}
+          {detail.settlement === 'unsettled' && detail.status !== 'cancelled' && can('pos.discount') && <button className="btn-secondary" onClick={() => setDiscount({ order: detail, mode: 'percent', value: '', reason: '' })}>Discount</button>}
           {detail.settlement === 'unsettled' && detail.status !== 'cancelled' && <button className="btn-secondary" onClick={() => { setAddTo(detail); setDetail(null); setTab('new'); }}>Add items</button>}
           {detail.kots.map((k) => <a key={k.id} className="btn-secondary" href="#" onClick={async (e) => {
             e.preventDefault(); const txt = await (await request('GET', `/kots/${k.id}/print`, null, { raw: true })).text();
@@ -239,8 +243,8 @@ export default function Pos() {
                   <td>{i.quantity} × {i.name}{i.variant && ` (${i.variant})`}{i.complimentary && <Badge status="complimentary" />}<div className="text-xs text-ink-500">{i.addons.map((a) => `+${a.name}`).join(', ')} {i.notes}</div></td>
                   <td className="text-right tabular-nums">{rupees(i.amount_paise)}</td>
                   <td className="whitespace-nowrap text-right">{!i.cancelled && ['unsettled', 'room_posted'].includes(detail.settlement) && detail.status !== 'cancelled' && <>
-                    {can('pos.complimentary') && !i.complimentary && detail.settlement === 'unsettled' && <button className="btn-ghost btn-sm" onClick={() => { const reason = prompt('Reason for complimentary'); if (reason) run(async () => { await api.post(`/orders/${detail.id}/items/${i.id}/complimentary`, { reason }); refreshDetail(); }); }}>Comp</button>}
-                    {can('pos.cancel') && <button className="btn-ghost btn-sm text-red-600" onClick={() => { const reason = prompt('Reason for removing item'); if (reason) run(async () => { await api.post(`/orders/${detail.id}/items/${i.id}/cancel`, { reason }); refreshDetail(); }); }}>Remove</button>}
+                    {can('pos.complimentary') && !i.complimentary && detail.settlement === 'unsettled' && <button className="btn-ghost btn-sm" onClick={() => setItemAction({ kind: 'comp', item: i })}>Comp</button>}
+                    {can('pos.cancel') && <button className="btn-ghost btn-sm text-red-600" onClick={() => setItemAction({ kind: 'remove', item: i })}>Remove</button>}
                   </>}</td>
                 </tr>
               ))}
@@ -252,12 +256,18 @@ export default function Pos() {
           </table>
         )}
       </Modal>
+      <ReasonDialog open={!!itemAction} danger={itemAction?.kind === 'remove'} confirmLabel={itemAction?.kind === 'comp' ? 'Make complimentary' : 'Remove item'}
+        title={itemAction ? `${itemAction.kind === 'comp' ? 'Complimentary' : 'Remove'} · ${itemAction.item.name}` : ''} onClose={() => setItemAction(null)}
+        onSubmit={(reason) => run(async () => {
+          await api.post(`/orders/${detail.id}/items/${itemAction.item.id}/${itemAction.kind === 'comp' ? 'complimentary' : 'cancel'}`, { reason });
+          setItemAction(null); refreshDetail();
+        }, itemAction?.kind === 'comp' ? 'Item marked complimentary' : 'Item removed')} />
       <ReasonDialog open={!!cancel} title={`Cancel ${cancel?.order_no}`} confirmLabel="Cancel order" onClose={() => setCancel(null)}
         onSubmit={(reason) => run(async () => { await api.post(`/orders/${cancel.id}/cancel`, { reason }); setCancel(null); setDetail(null); orders.reload(); }, 'Order cancelled')} />
-      <Modal open={!!discount} onClose={() => setDiscount(null)} title="Order discount"
+      <Modal open={!!discount} onClose={() => setDiscount(null)} title={`Discount · ${discount?.order?.order_no || ''}`}
         footer={<><button className="btn-secondary" onClick={() => setDiscount(null)}>Cancel</button><button className="btn-primary" disabled={!discount?.value || !discount?.reason} onClick={() => run(async () => {
-          await api.post(`/orders/${detail.id}/discount`, { reason: discount.reason, ...(discount.mode === 'percent' ? { percent: Number(discount.value) } : { amount_paise: toPaise(discount.value) }) });
-          setDiscount(null); refreshDetail();
+          await api.post(`/orders/${discount.order.id}/discount`, { reason: discount.reason, ...(discount.mode === 'percent' ? { percent: Number(discount.value) } : { amount_paise: toPaise(discount.value) }) });
+          setDiscount(null); if (detail) refreshDetail(); else orders.reload();
         }, 'Discount applied')}>Apply</button></>}>
         {discount && <div className="grid grid-cols-2 gap-3">
           <Field label="Type"><select className="input" value={discount.mode} onChange={(e) => setDiscount({ ...discount, mode: e.target.value })}><option value="percent">%</option><option value="amount">₹</option></select></Field>

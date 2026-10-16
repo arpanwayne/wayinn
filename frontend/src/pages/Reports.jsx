@@ -167,8 +167,11 @@ export default function Reports() {
         <div className="card overflow-x-auto">
           <div className="flex justify-end p-2"><button className="btn-ghost btn-sm" onClick={() => downloadCsv(`/reports/collections?${q}&format=csv`, 'collections.csv')}>Export CSV</button></div>
           {!coll.data?.length ? <Empty>No payments in range</Empty> : <table className="table"><tbody>{coll.data.map((p) => (
-            <tr key={p.id} className={p.voided_at ? 'text-ink-300 line-through' : ''}><td className="whitespace-nowrap">{fmtDateTime(p.received_at)}</td><td>{label(p.kind)} · {label(p.method)}</td><td>{p.guest || 'Walk-in'}<div className="text-xs text-ink-500">{p.booking_ref || p.invoice_no}</div></td>
-              <td className="text-ink-500">{p.received_by}</td><td className="text-right font-semibold tabular-nums">{p.kind === 'refund' ? '−' : ''}{rupees(p.amount_paise)}</td></tr>
+            <tr key={p.id} className={p.voided_at ? 'text-ink-400' : ''}><td className="whitespace-nowrap">{fmtDateTime(p.received_at)}</td>
+              <td>{label(p.kind)} · {label(p.method)}{p.voided_at && <span className="badge ml-2 bg-ink-900 text-white" title={p.void_reason || ''}>Voided</span>}</td>
+              <td>{p.guest || 'Walk-in'}<div className="text-xs text-ink-500">{p.booking_ref || p.invoice_no}{p.voided_at && p.void_reason ? ` · ${p.void_reason}` : ''}</div></td>
+              <td className="text-ink-500">{p.received_by}</td>
+              <td className={`text-right font-semibold tabular-nums ${p.voided_at ? 'line-through' : ''}`}>{p.kind === 'refund' ? '−' : ''}{rupees(p.amount_paise)}</td></tr>
           ))}</tbody></table>}
         </div>
       )}

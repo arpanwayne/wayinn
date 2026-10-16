@@ -167,3 +167,38 @@ export function ReasonDialog({ open, title, onClose, onSubmit, confirmLabel = 'C
     </Modal>
   );
 }
+
+/** In-app replacement for window.prompt: one text field, optional or required. Safe on phones and kiosks (never blocks the page). */
+export function PromptDialog({ open, title, label: l, placeholder, confirmLabel = 'Save', required = true, minLength = 1, danger = false, extra, onClose, onSubmit }) {
+  const [value, setValue] = useState('');
+  useEffect(() => { if (open) setValue(''); }, [open]);
+  const ok = !required || value.trim().length >= minLength;
+  return (
+    <Modal open={open} onClose={onClose} title={title}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Back</button>
+        <button className={danger ? 'btn-danger' : 'btn-primary'} disabled={!ok} onClick={() => onSubmit(value.trim())}>{confirmLabel}</button>
+      </>}>
+      {extra}
+      <form onSubmit={(e) => { e.preventDefault(); if (ok) onSubmit(value.trim()); }}>
+        <Field label={l}>
+          <input className="input" value={value} placeholder={placeholder} onChange={(e) => setValue(e.target.value)} autoFocus />
+        </Field>
+      </form>
+    </Modal>
+  );
+}
+
+/** In-app replacement for window.confirm with a yes/no choice. */
+export function ConfirmDialog({ open, title, message, yesLabel = 'Yes', noLabel = 'No', onYes, onNo, onClose }) {
+  return (
+    <Modal open={open} onClose={onClose} title={title}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Back</button>
+        <button className="btn-secondary" onClick={onNo}>{noLabel}</button>
+        <button className="btn-primary" onClick={onYes}>{yesLabel}</button>
+      </>}>
+      <p className="text-sm text-ink-600">{message}</p>
+    </Modal>
+  );
+}

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -19,6 +19,15 @@ export default function Rooms() {
   const [reason, setReason] = useState('');
   const [filter, setFilter] = useState('');
   const [run, busy] = useAction();
+  const [params, setParams] = useSearchParams();
+  // Deep link from the front desk key rack: /rooms?room=<id> opens that room's detail straight away.
+  useEffect(() => {
+    const id = Number(params.get('room'));
+    if (!id || !data) return;
+    const r = data.find((x) => x.id === id);
+    if (r) { setSel(r); setStatus(r.hk_status); setReason(r.out_of_order_reason || ''); }
+    setParams({}, { replace: true });
+  }, [params, data]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!data) return <Loading />;
   const counts = data.reduce((a, r) => ({ ...a, [r.display_status]: (a[r.display_status] || 0) + 1 }), {});
   const shown = filter ? data.filter((r) => r.display_status === filter) : data;
@@ -59,7 +68,7 @@ export default function Rooms() {
           <div className="space-y-3">
             <div className="text-sm text-ink-600">{sel.room_type} · {label(sel.display_status)}</div>
             {sel.guest_name && <div className="rounded-lg bg-ink-50 px-3 py-2 text-sm">In house: <b>{sel.guest_name}</b> until {fmtDate(sel.check_out_date)} · <Link className="link underline" to={`/bookings/${sel.booking_id}`}>booking</Link></div>}
-            {sel.arriving_guest && <div className="rounded-lg bg-night-50 px-3 py-2 text-sm">Arriving today: <b>{sel.arriving_guest}</b></div>}
+            {sel.arriving_guest && <div className="rounded-lg bg-night-50 px-3 py-2 text-sm">Arriving today: <b>{sel.arriving_guest}</b>{sel.arriving_booking_id && <> · <Link className="link underline" to={`/bookings/${sel.arriving_booking_id}`}>booking</Link></>}</div>}
             {can('rooms.status') && <>
               <Field label="Housekeeping status">
                 <div className="grid grid-cols-3 gap-2">

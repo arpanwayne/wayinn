@@ -404,15 +404,29 @@ async function postOrderLines(db, { hotel, userId = null }, order, folioId) {
       [hotel.id, folioId, category, `${i.name}${i.variant ? ` (${i.variant})` : ''} — ${order.order_no}`, ts.food_sac, i.quantity,
         i.unit_price_paise, i.amount_paise, i.tax_rate, taxOn(i.amount_paise, i.tax_rate), today, order.id, userId]);
   }
-  if (order.discount_paise > 0) {
-    const pre = items.reduce((a, i) => a + taxOn(i.amount_paise, i.tax_rate), 0);
-    const taxDiff = order.tax_paise - pre; // negative
-    const rate = order.subtotal_paise ? Math.round((-taxDiff / order.discount_paise) * 10000) / 100 : 0;
-    await db.query(
-      `INSERT INTO folio_lines (hotel_id, folio_id, category, description, quantity, unit_price_paise, amount_paise, tax_rate, tax_paise,
-                                business_date, source_type, source_id, created_by)
-       VALUES ($1,$2,'discount',$3,1,$4,$4,$5,$6,$7,'order',$8,$9)`,
-      [hotel.id, folioId, `Discount — ${order.order_no}`, -order.discount_paise, rate, taxDiff, today, order.id, userId]);
+  if (order.discount_paise > 0 && order.subtotal_paise > 0) {
+    // One discount line per GST rate (never a blended rate), each carrying exactly the tax the order saved on those items.
+    const factor = (order.subtotal_paise - order.discount_paise) / order.subtotal_paise;
+    const groups = new Map();
+    for (const i of items) {
+      const k = Number(i.tax_rate);
+      const g = groups.get(k) || { rate: k, amount: 0, taxDiff: 0 };
+      g.amount += i.amount_paise;
+      g.taxDiff += taxOn(Math.round(i.amount_paise * factor), i.tax_rate) - taxOn(i.amount_paise, i.tax_rate);
+      groups.set(k, g);
+    }
+    const list = [...groups.values()];
+    const base = list.reduce((a, g) => a + g.amount, 0);
+    for (const g of list) g.share = Math.floor((order.discount_paise * g.amount) / base);
+    let left = order.discount_paise - list.reduce((a, g) => a + g.share, 0);
+    for (const g of [...list].sort((a, c) => c.amount - a.amount)) { if (left <= 0) break; g.share += 1; left -= 1; }
+    for (const g of list.filter((x) => x.share > 0)) {
+      await db.query(
+        `INSERT INTO folio_lines (hotel_id, folio_id, category, description, quantity, unit_price_paise, amount_paise, tax_rate, tax_paise,
+                                  business_date, source_type, source_id, created_by)
+         VALUES ($1,$2,'discount',$3,1,$4,$4,$5,$6,$7,'order',$8,$9)`,
+        [hotel.id, folioId, `Discount — ${order.order_no}${list.length > 1 ? ` (${g.rate}% items)` : ''}`, -g.share, g.rate, g.taxDiff, today, order.id, userId]);
+    }
   }
 }
 

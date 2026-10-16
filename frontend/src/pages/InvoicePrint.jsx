@@ -29,6 +29,7 @@ export default function InvoicePrint() {
       </div>
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div><div className="text-xs font-semibold uppercase text-ink-500">Bill to</div><div className="font-semibold">{inv.bill_to.name}</div>
+          {inv.bill_to.guest_name && <div className="text-ink-600">Guest: {inv.bill_to.guest_name}</div>}
           {inv.bill_to.gstin && <div>GSTIN: {inv.bill_to.gstin}</div>}{inv.bill_to.phone && <div>{inv.bill_to.phone}</div>}</div>
         {inv.stay && <div className="text-right"><div className="text-xs font-semibold uppercase text-ink-500">Stay</div>
           <div>Room {inv.stay.room} · {inv.stay.booking_ref}</div><div>{fmtDate(inv.stay.check_in)} → {fmtDate(inv.stay.check_out)}</div></div>}
