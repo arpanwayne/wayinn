@@ -32,7 +32,7 @@ export default function GuestDetail() {
   }, 'Guest saved');
   return (
     <div className="space-y-5">
-      <PageHeader title={g.full_name} subtitle={`${g.stays.length} stay(s)`} actions={editable && <>
+      <PageHeader title={g.full_name} subtitle={`${g.stay_count} stay(s)${g.stays.length > g.stay_count ? ` · ${g.stays.length} booking(s) in total` : ''}`} actions={editable && <>
         <button className="btn-ghost" onClick={() => setMerge({ q: '', results: null, pick: null })}>Merge duplicate…</button>
         {g.stays.length === 0 && <button className="btn-ghost text-red-700" onClick={() => setDel(true)}>Delete</button>}
         <button className="btn-primary" disabled={busy} onClick={save}>Save</button>
@@ -72,7 +72,7 @@ export default function GuestDetail() {
           </div>
         </div>
         <div className="card p-4">
-          <h2 className="mb-3">Stay history</h2>
+          <h2 className="mb-3">Bookings & stays</h2>
           <ul className="space-y-2">
             {g.stays.map((s) => (
               <li key={s.id} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2 text-sm">

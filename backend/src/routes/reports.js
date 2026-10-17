@@ -312,7 +312,7 @@ r.get('/summary/daily', requirePerm('reports.view'), async (req, res) => {
   if (d.revenue_today) {
     const coll = (d.collections_today || []).reduce((a, x) => a + Number(x.amount_paise), 0);
     lines.push(`Revenue today: rooms ${rs(d.revenue_today.room)}, food ${rs(d.revenue_today.food)}, other ${rs(d.revenue_today.other)}. Collected ${rs(coll)}.`);
-    lines.push(`Month to date: ${rs(d.revenue_month.total)}. In-house running bills: ${rs(d.in_house_balance.amount_paise)}. Unpaid after checkout: ${rs(d.outstanding.amount_paise)} (${d.outstanding.folios} bill(s)).`);
+    lines.push(`Month to date: ${rs(d.revenue_month.total)}. In-house running bills: ${rs(d.in_house_balance.amount_paise)}. Unpaid bills (after checkout, no-show or cancellation): ${rs(d.outstanding.amount_paise)} (${d.outstanding.folios} bill(s)).`);
   }
   lines.push(`Restaurant: ${d.restaurant_today.orders} orders, ${d.restaurant_today.cancelled} cancelled, ${d.restaurant_today.active} in progress.`);
   lines.push(`Housekeeping: ${d.housekeeping.pending} pending tasks. Maintenance: ${d.maintenance.open} open (${d.maintenance.urgent} urgent).`);

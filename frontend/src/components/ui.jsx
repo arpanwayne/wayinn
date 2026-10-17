@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { label } from '../lib/format.js';
 
@@ -54,7 +55,8 @@ export function Modal({ open, onClose, title, children, wide = false, footer }) 
     return () => window.removeEventListener('keydown', h);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  // Rendered into <body> so the page's own layout (e.g. space-y margins on siblings) can never shift the overlay.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-ink-900/40 p-0 sm:p-4" onMouseDown={onClose}>
       <div className={`card w-full ${wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'} max-h-[92vh] flex flex-col rounded-b-none sm:rounded-xl`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
@@ -64,7 +66,8 @@ export function Modal({ open, onClose, title, children, wide = false, footer }) 
         <div className="overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-ink-100 px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

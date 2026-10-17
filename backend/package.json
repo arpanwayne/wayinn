@@ -2,7 +2,7 @@
   "name": "wayinn-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Wayinn Hotel Operating System — API",
+  "description": "Wayinn Hotel Operating System \u2014 API",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
     "demo-data": "node scripts/demo-data.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "cleanup-demo": "node scripts/cleanup-demo.js"
   },
   "engines": {
     "node": ">=20"
