@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
-import { ago, label } from '../lib/format.js';
+import { ago, label, plural } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, Tabs, Empty, PromptDialog, DeleteDialog, useAction } from '../components/ui.jsx';
 
 export default function Housekeeping() {
@@ -24,7 +24,7 @@ export default function Housekeeping() {
   const done = data.tasks.filter((t) => t.status === 'done');
   return (
     <div>
-      <PageHeader title="Housekeeping" subtitle={`${open.length} open task(s)`}
+      <PageHeader title="Housekeeping" subtitle={`${plural(open.length, 'open task')}`}
         actions={<>
           {manager && <button className="btn-primary" onClick={() => setNewTask({ room_id: '', task_type: 'cleaning', priority: 'normal', assigned_to: '', notes: '' })}>+ Task</button>}
           <button className="btn-secondary" onClick={() => setLost({ room_id: '', item: '', description: '' })}>Log lost item</button>

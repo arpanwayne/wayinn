@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
-import { fmtDate } from '../lib/format.js';
+import { fmtDate, plural } from '../lib/format.js';
 import { PageHeader, Loading, Field, Badge, Modal, Empty, DeleteDialog, useAction } from '../components/ui.jsx';
 
 const FIELDS = [['full_name', 'Full name'], ['phone', 'Phone'], ['email', 'Email'], ['address', 'Address'], ['city', 'City'], ['country', 'Country'],
@@ -32,7 +32,7 @@ export default function GuestDetail() {
   }, 'Guest saved');
   return (
     <div className="space-y-5">
-      <PageHeader title={g.full_name} subtitle={`${g.stay_count} stay(s)${g.stays.length > g.stay_count ? ` · ${g.stays.length} booking(s) in total` : ''}`} actions={editable && <>
+      <PageHeader title={g.full_name} subtitle={`${plural(g.stay_count, 'stay')}${g.stays.length > g.stay_count ? ` · ${plural(g.stays.length, 'booking')} in total` : ''}`} actions={editable && <>
         <button className="btn-ghost" onClick={() => setMerge({ q: '', results: null, pick: null })}>Merge duplicate…</button>
         {g.stays.length === 0 && <button className="btn-ghost text-red-700" onClick={() => setDel(true)}>Delete</button>}
         <button className="btn-primary" disabled={busy} onClick={save}>Save</button>
@@ -55,7 +55,7 @@ export default function GuestDetail() {
             <ul className="divide-y divide-ink-100 rounded-xl border border-ink-200">{merge.results.map((x) => (
               <li key={x.id}><label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
                 <input type="radio" name="merge-into" checked={merge.pick?.id === x.id} onChange={() => setMerge({ ...merge, pick: x })} />
-                <span><b>{x.full_name}</b><span className="block text-xs text-ink-500">{[x.phone, x.email, x.city].filter(Boolean).join(' · ')} · {x.stay_count} stay(s)</span></span>
+                <span><b>{x.full_name}</b><span className="block text-xs text-ink-500">{[x.phone, x.email, x.city].filter(Boolean).join(' · ')} · {plural(x.stay_count, 'stay')}</span></span>
               </label></li>
             ))}</ul>
           ))}
