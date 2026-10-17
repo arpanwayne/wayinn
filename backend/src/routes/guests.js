@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { one, many } from '../db.js';
+import { one, many, tx } from '../db.js';
 import { parse, idParam } from '../lib/validate.js';
 import { requireStaff, requirePerm, can } from '../middleware/auth.js';
-import { notFound } from '../lib/errors.js';
+import { notFound, badRequest, conflict } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 
 const r = Router();
@@ -94,6 +94,48 @@ r.put('/guests/:id', requirePerm('guests.manage'), async (req, res) => {
   if (!g) throw notFound();
   await audit(req, 'guest.updated', 'guest', id, { changed: keys });
   res.json(g);
+});
+
+// Delete a guest added by mistake. A guest with any booking is part of the records and cannot be deleted
+// (merge duplicates instead).
+r.delete('/guests/:id', requirePerm('guests.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const g = await one('SELECT id, full_name FROM guests WHERE id = $1 AND hotel_id = $2', [id, req.hotelId]);
+  if (!g) throw notFound();
+  const { n } = await one('SELECT count(*)::int AS n FROM bookings WHERE guest_id = $1', [id]);
+  if (n) throw conflict(`${g.full_name} has ${n} booking(s) on record, so the profile cannot be deleted. If it is a duplicate, merge it into the other profile.`);
+  await one('DELETE FROM guests WHERE id = $1 RETURNING id', [id]);
+  await audit(req, 'guest.deleted', 'guest', id, { name: g.full_name });
+  res.json({ ok: true });
+});
+
+// Merge a duplicate guest into another profile: bookings, stays and bills move over, empty fields are
+// filled from the duplicate, and the duplicate is removed.
+r.post('/guests/:id/merge', requirePerm('guests.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const b = parse(z.object({ into_guest_id: z.number().int() }), req.body);
+  if (b.into_guest_id === id) throw badRequest('Pick a different guest to merge into');
+  const out = await tx(async (db) => {
+    const from = await db.one('SELECT * FROM guests WHERE id = $1 AND hotel_id = $2 FOR UPDATE', [id, req.hotelId]);
+    const into = await db.one('SELECT * FROM guests WHERE id = $1 AND hotel_id = $2 FOR UPDATE', [b.into_guest_id, req.hotelId]);
+    if (!from || !into) throw notFound('Guest not found');
+    const fill = GUEST_COLS.filter((k) => k !== 'custom_fields' && (into[k] === null || into[k] === '') && from[k] !== null && from[k] !== '');
+    if (fill.length) {
+      await db.query(`UPDATE guests SET ${fill.map((k, i) => `${k} = $${i + 1}`).join(', ')} WHERE id = $${fill.length + 1}`,
+        [...fill.map((k) => from[k]), into.id]);
+    }
+    if (from.notes && into.notes && from.notes !== into.notes) {
+      await db.query(`UPDATE guests SET notes = notes || E'\n' || $1 WHERE id = $2`, [from.notes, into.id]);
+    }
+    const moved = {};
+    for (const t of ['bookings', 'stays', 'folios']) {
+      moved[t] = (await db.query(`UPDATE ${t} SET guest_id = $1 WHERE guest_id = $2`, [into.id, id])).rowCount;
+    }
+    await db.query('DELETE FROM guests WHERE id = $1', [id]);
+    await audit(req, 'guest.merged', 'guest', into.id, { merged_guest_id: id, merged_name: from.full_name, filled: fill, moved }, db);
+    return db.one('SELECT * FROM guests WHERE id = $1', [into.id]);
+  });
+  res.json(out);
 });
 
 export default r;

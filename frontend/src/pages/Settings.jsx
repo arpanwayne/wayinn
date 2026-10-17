@@ -4,7 +4,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { rupees0, toPaise } from '../lib/format.js';
-import { PageHeader, Loading, Modal, Field, Tabs, Badge, PromptDialog, useAction } from '../components/ui.jsx';
+import { PageHeader, Loading, Modal, Field, Tabs, Badge, PromptDialog, DeleteDialog, useAction } from '../components/ui.jsx';
 
 function HotelProfile() {
   const { data, reload } = useApi('/hotel');
@@ -84,8 +84,11 @@ function RoomSetup() {
   const rooms = useApi('/rooms');
   const [rt, setRt] = useState(null);
   const [bulk, setBulk] = useState(null);
+  const [room, setRoom] = useState(null);
+  const [del, setDel] = useState(null); // { kind: 'room' | 'type', id, name }
   const [run, busy] = useAction();
   if (!types.data || !rooms.data) return <Loading />;
+  const reloadAll = () => { rooms.reload(); types.reload(); };
   return (
     <div className="space-y-5">
       <div className="card overflow-x-auto">
@@ -101,14 +104,16 @@ function RoomSetup() {
       <div className="card p-4">
         <h2 className="mb-3">Rooms ({rooms.data.length})</h2>
         <div className="flex flex-wrap gap-2">{rooms.data.map((r) => (
-          <span key={r.id} className={`rounded-lg border px-3 py-1.5 text-sm ${r.active ? 'border-ink-200' : 'border-dashed text-ink-400'}`}>
-            <b>{r.number}</b> <span className="text-xs text-ink-500">{r.room_type}</span>
-            <button className="ml-2 text-xs text-ink-400 hover:text-ink-800" onClick={() => run(async () => { await api.put(`/rooms/${r.id}`, { active: !r.active }); rooms.reload(); types.reload(); })}>{r.active ? 'disable' : 'enable'}</button>
-          </span>
+          <button key={r.id} type="button" title="Edit room" onClick={() => setRoom({ ...r, floor: r.floor || '', notes: r.notes || '' })}
+            className={`rounded-lg border px-3 py-1.5 text-left text-sm transition hover:border-night-900 ${r.active ? 'border-ink-200' : 'border-dashed text-ink-400'}`}>
+            <b>{r.number}</b> <span className="text-xs text-ink-500">{r.room_type}{!r.active && ' · disabled'}</span>
+          </button>
         ))}</div>
+        <p className="mt-2 text-xs text-ink-500">Tap a room to change its number, type or floor, disable it, or delete it.</p>
       </div>
       <Modal open={!!rt} onClose={() => setRt(null)} title={rt?.id ? `Edit ${rt.name}` : 'New room type'}
-        footer={<><button className="btn-secondary" onClick={() => setRt(null)}>Cancel</button><button className="btn-primary" disabled={busy || !rt?.name || rt?.rate === ''} onClick={() => run(async () => {
+        footer={<>{rt?.id && <button className="btn-ghost mr-auto text-red-700" onClick={() => setDel({ kind: 'type', id: rt.id, name: rt.name })}>Delete</button>}
+          <button className="btn-secondary" onClick={() => setRt(null)}>Cancel</button><button className="btn-primary" disabled={busy || !rt?.name || rt?.rate === ''} onClick={() => run(async () => {
           const body = { name: rt.name, base_occupancy: Number(rt.base_occupancy), max_occupancy: Number(rt.max_occupancy), base_rate_paise: toPaise(rt.rate),
             extra_person_rate_paise: toPaise(rt.extra || 0), amenities: rt.amenities.split(',').map((x) => x.trim()).filter(Boolean), description: rt.description || null };
           if (rt.id) await api.put(`/room-types/${rt.id}`, body); else await api.post('/room-types', body);
@@ -127,7 +132,7 @@ function RoomSetup() {
       <Modal open={!!bulk} onClose={() => setBulk(null)} title="Add rooms"
         footer={<><button className="btn-secondary" onClick={() => setBulk(null)}>Cancel</button><button className="btn-primary" disabled={busy || !bulk?.from} onClick={() => run(async () => {
           await api.post('/rooms/bulk', { room_type_id: bulk.room_type_id, from: Number(bulk.from), to: Number(bulk.to || bulk.from), floor: bulk.floor || null });
-          setBulk(null); rooms.reload(); types.reload();
+          setBulk(null); reloadAll();
         }, 'Rooms added')}>Add</button></>}>
         {bulk && <div className="grid grid-cols-3 gap-3">
           <Field label="From no."><input className="input" value={bulk.from} onChange={(e) => setBulk({ ...bulk, from: e.target.value })} /></Field>
@@ -135,6 +140,32 @@ function RoomSetup() {
           <Field label="Floor"><input className="input" value={bulk.floor} onChange={(e) => setBulk({ ...bulk, floor: e.target.value })} /></Field>
         </div>}
       </Modal>
+      <Modal open={!!room} onClose={() => setRoom(null)} title={`Room ${room?.number || ''}`}
+        footer={<>
+          <button className="btn-ghost mr-auto text-red-700" onClick={() => setDel({ kind: 'room', id: room.id, name: `room ${room.number}` })}>Delete</button>
+          <button className="btn-secondary" onClick={() => setRoom(null)}>Cancel</button>
+          <button className="btn-primary" disabled={busy || !room?.number} onClick={() => run(async () => {
+            await api.put(`/rooms/${room.id}`, { number: room.number.trim(), room_type_id: Number(room.room_type_id), floor: room.floor || null, notes: room.notes || null, active: room.active });
+            setRoom(null); reloadAll();
+          }, 'Room saved')}>Save</button></>}>
+        {room && <div className="grid grid-cols-2 gap-3">
+          <Field label="Room number"><input className="input" value={room.number} onChange={(e) => setRoom({ ...room, number: e.target.value })} /></Field>
+          <Field label="Room type"><select className="input" value={room.room_type_id} onChange={(e) => setRoom({ ...room, room_type_id: e.target.value })}>
+            {types.data.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
+          <Field label="Floor"><input className="input" value={room.floor} onChange={(e) => setRoom({ ...room, floor: e.target.value })} /></Field>
+          <Field label="Notes"><input className="input" value={room.notes} onChange={(e) => setRoom({ ...room, notes: e.target.value })} /></Field>
+          <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={room.active} onChange={(e) => setRoom({ ...room, active: e.target.checked })} /> Room in use (untick to disable it; it stops showing for new bookings)</label>
+        </div>}
+      </Modal>
+      <DeleteDialog open={!!del} title={`Delete ${del?.name}?`}
+        message={del?.kind === 'room'
+          ? 'This removes the room for good. It only works for a room that was never used. A room with bookings, orders or tasks can only be disabled.'
+          : 'This removes the room type for good. It only works when no room and no booking uses it.'}
+        onClose={() => setDel(null)}
+        onConfirm={() => run(async () => {
+          await api.del(del.kind === 'room' ? `/rooms/${del.id}` : `/room-types/${del.id}`);
+          setDel(null); setRoom(null); setRt(null); reloadAll();
+        }, 'Deleted').catch(() => setDel(null))} />
     </div>
   );
 }
@@ -143,6 +174,8 @@ function MenuSetup() {
   const { data, reload } = useApi('/menu');
   const [item, setItem] = useState(null);
   const [adding, setAdding] = useState(null); // 'category' | 'station'
+  const [renaming, setRenaming] = useState(null); // { kind, id, name }
+  const [del, setDel] = useState(null); // { kind: 'item' | 'category' | 'station', id, name }
   const [run, busy] = useAction();
   if (!data) return <Loading />;
   const parsePriced = (s) => s.split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const [n, p] = x.split(':'); return { name: n.trim(), price_paise: toPaise(p || 0) }; });
@@ -157,10 +190,31 @@ function MenuSetup() {
       <PromptDialog open={!!adding} title={adding === 'category' ? 'New menu category' : 'New kitchen station'} label={adding === 'category' ? 'Category name' : 'Station name (e.g. Tandoor, Bar)'}
         confirmLabel="Add" onClose={() => setAdding(null)}
         onSubmit={(name) => run(async () => { await api.post(adding === 'category' ? '/menu/categories' : '/stations', { name }); setAdding(null); reload(); }, 'Added')} />
-      {data.categories.map((c) => (
-        <div key={c.id} className="card overflow-x-auto">
+      <PromptDialog open={!!renaming} title={`Rename ${renaming?.name}`} label="New name" confirmLabel="Save" onClose={() => setRenaming(null)}
+        onSubmit={(name) => run(async () => { await api.put(renaming.kind === 'category' ? `/menu/categories/${renaming.id}` : `/stations/${renaming.id}`, { name }); setRenaming(null); reload(); }, 'Renamed')} />
+      <div className="card p-4">
+        <h2 className="mb-2">Categories & kitchen stations</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[['category', 'Categories', data.categories], ['station', 'Kitchen stations', data.stations]].map(([kind, title, list]) => (
+            <div key={kind}>
+              <div className="label">{title}</div>
+              <ul className="divide-y divide-ink-100 rounded-xl border border-ink-200">{list.map((x) => (
+                <li key={x.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
+                  <span>{x.name} <span className="text-xs text-ink-400">{data.items.filter((i) => (kind === 'category' ? i.category_id : i.station_id) === x.id).length} items</span></span>
+                  <span className="whitespace-nowrap">
+                    <button className="btn-ghost btn-sm" onClick={() => setRenaming({ kind, id: x.id, name: x.name })}>Rename</button>
+                    <button className="btn-ghost btn-sm text-red-700" onClick={() => setDel({ kind, id: x.id, name: x.name })}>Delete</button>
+                  </span>
+                </li>
+              ))}</ul>
+            </div>
+          ))}
+        </div>
+      </div>
+      {[...data.categories, ...(data.items.some((i) => !data.categories.some((c) => c.id === i.category_id)) ? [{ id: null, name: 'No category' }] : [])].map((c) => (
+        <div key={c.id ?? 'none'} className="card overflow-x-auto">
           <h2 className="p-3">{c.name}</h2>
-          <table className="table"><tbody>{data.items.filter((i) => i.category_id === c.id).map((i) => (
+          <table className="table"><tbody>{data.items.filter((i) => (c.id === null ? !data.categories.some((x) => x.id === i.category_id) : i.category_id === c.id)).map((i) => (
             <tr key={i.id} className={i.available ? '' : 'opacity-50'}>
               <td className="font-semibold">{i.name}<div className="text-xs font-normal text-ink-500">{[fmtPriced(i.variants), i.addons.length ? `Add-ons: ${fmtPriced(i.addons)}` : ''].filter(Boolean).join(' · ')}</div></td>
               <td className="tabular-nums">{rupees0(i.price_paise)}</td>
@@ -175,7 +229,8 @@ function MenuSetup() {
         </div>
       ))}
       <Modal open={!!item} onClose={() => setItem(null)} title={item?.id ? `Edit ${item.name}` : 'New menu item'}
-        footer={<><button className="btn-secondary" onClick={() => setItem(null)}>Cancel</button><button className="btn-primary" disabled={busy || !item?.name || item?.price === ''} onClick={() => run(async () => {
+        footer={<>{item?.id && <button className="btn-ghost mr-auto text-red-700" onClick={() => setDel({ kind: 'item', id: item.id, name: item.name })}>Delete</button>}
+          <button className="btn-secondary" onClick={() => setItem(null)}>Cancel</button><button className="btn-primary" disabled={busy || !item?.name || item?.price === ''} onClick={() => run(async () => {
           const body = { name: item.name, description: item.description || null, category_id: item.category_id ? Number(item.category_id) : null, station_id: item.station_id ? Number(item.station_id) : null,
             price_paise: toPaise(item.price), is_veg: item.is_veg, variants: parsePriced(item.variants), addons: parsePriced(item.addons), available: item.available, show_on_qr: item.show_on_qr };
           if (item.id) await api.put(`/menu/items/${item.id}`, body); else await api.post('/menu/items', body);
@@ -193,6 +248,15 @@ function MenuSetup() {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={item.show_on_qr} onChange={(e) => setItem({ ...item, show_on_qr: e.target.checked })} /> Show on guest QR menu</label>
         </div>}
       </Modal>
+      <DeleteDialog open={!!del} title={`Delete ${del?.name}?`}
+        message={del?.kind === 'item' ? 'The item is removed from the menu for good. Past orders and bills keep their own copy of it.'
+          : del?.kind === 'category' ? 'The category must be empty. Move or delete its items first.'
+          : 'No menu item may still be sent to this station. Move those items to another station first.'}
+        onClose={() => setDel(null)}
+        onConfirm={() => run(async () => {
+          await api.del(del.kind === 'item' ? `/menu/items/${del.id}` : del.kind === 'category' ? `/menu/categories/${del.id}` : `/stations/${del.id}`);
+          setDel(null); setItem(null); reload();
+        }, 'Deleted').catch(() => setDel(null))} />
     </div>
   );
 }

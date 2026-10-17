@@ -3,7 +3,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { fmtDateTime, label } from '../lib/format.js';
-import { PageHeader, Badge, Loading, Modal, Field, useAction } from '../components/ui.jsx';
+import { PageHeader, Badge, Loading, Modal, Field, DeleteDialog, useAction } from '../components/ui.jsx';
 
 const ROLES = ['owner', 'front_desk', 'kitchen'];
 
@@ -12,6 +12,7 @@ export default function Staff() {
   const { data, reload } = useApi('/staff');
   const cat = useApi('/hotel/permissions');
   const [form, setForm] = useState(null);
+  const [del, setDel] = useState(null);
   const [run, busy] = useAction();
   if (!data || !cat.data) return <Loading />;
   const roleDefaults = (role) => cat.data.roles[role] || [];
@@ -49,7 +50,9 @@ export default function Staff() {
         </table>
       </div>
       <Modal open={!!form} onClose={() => setForm(null)} title={form?.id ? `Edit ${form.name}` : 'Add staff'} wide
-        footer={<><button className="btn-secondary" onClick={() => setForm(null)}>Cancel</button><button className="btn-primary" disabled={busy} onClick={save}>Save</button></>}>
+        footer={<>
+          {form?.id && form.id !== user.id && <button className="btn-ghost mr-auto text-red-700" onClick={() => setDel(form)}>Delete</button>}
+          <button className="btn-secondary" onClick={() => setForm(null)}>Cancel</button><button className="btn-primary" disabled={busy} onClick={save}>Save</button></>}>
         {form && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -85,6 +88,10 @@ export default function Staff() {
           </div>
         )}
       </Modal>
+      <DeleteDialog open={!!del} title={`Delete ${del?.name}?`}
+        message="This removes the login for good. It only works for an account that has no work on record; anyone who has made bookings, bills or tasks can only be switched off (untick Account active)."
+        onClose={() => setDel(null)}
+        onConfirm={() => run(async () => { await api.del(`/staff/${del.id}`); setDel(null); setForm(null); reload(); }, 'Staff deleted').catch(() => setDel(null))} />
     </div>
   );
 }

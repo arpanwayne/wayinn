@@ -202,3 +202,24 @@ export function ConfirmDialog({ open, title, message, yesLabel = 'Yes', noLabel 
     </Modal>
   );
 }
+
+/** Confirm a permanent delete. With `typeToConfirm`, the user must type that word first (for big deletes). */
+export function DeleteDialog({ open, title, message, typeToConfirm, confirmLabel = 'Delete', onClose, onConfirm }) {
+  const [typed, setTyped] = useState('');
+  useEffect(() => { if (open) setTyped(''); }, [open]);
+  const ok = !typeToConfirm || typed.trim() === typeToConfirm;
+  return (
+    <Modal open={open} onClose={onClose} title={title}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Back</button>
+        <button className="btn-danger" disabled={!ok} onClick={() => onConfirm(typed.trim())}>{confirmLabel}</button>
+      </>}>
+      <p className="text-sm text-ink-600">{message}</p>
+      {typeToConfirm && (
+        <Field label={`Type "${typeToConfirm}" to confirm`} className="mt-3">
+          <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+        </Field>
+      )}
+    </Modal>
+  );
+}

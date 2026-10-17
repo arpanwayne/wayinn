@@ -310,3 +310,135 @@ test('dashboard revenue: breakdown adds up and ignores guests not yet checked in
   assert.equal(after.total, before.total, 'charge on a not-checked-in booking must not count as revenue yet');
   await call('POST', `/api/bookings/${res.data?.booking_id || stay.booking_id}/cancel`, { reason: 'test cleanup' }, tok.owner);
 });
+
+test('month revenue breakdown adds up, and a reservation is not in "balance pending"', async () => {
+  const m = (await call('GET', '/api/reports/dashboard', null, tok.owner)).data.revenue_month;
+  assert.equal(m.total, m.room + m.food + m.other + m.discount);
+  const rooms = (await call('GET', '/api/rooms', null, tok.owner)).data;
+  const r = rooms.find((x) => x.number === '102');
+  let res = await call('POST', '/api/bookings', {
+    guest: { full_name: 'Not Arrived', phone: '9333333333' },
+    stays: [{ room_type_id: r.room_type_id, check_in_date: addDays(today, 3), check_out_date: addDays(today, 4) }],
+  }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const stay = res.data.stays[0];
+  res = await call('POST', `/api/folios/${stay.folio_id}/charges`, { description: 'Cake order', unit_price_paise: 115700 }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const pending = (await call('GET', '/api/folios?outstanding=1', null, tok.owner)).data;
+  assert.ok(!pending.some((f) => f.id === stay.folio_id), 'bill of a guest not checked in must not be in balance pending');
+  const open = (await call('GET', '/api/folios?status=open', null, tok.owner)).data;
+  assert.ok(open.some((f) => f.id === stay.folio_id), 'it is still listed with open bills');
+  await call('POST', `/api/bookings/${stay.booking_id}/cancel`, { reason: 'test cleanup' }, tok.owner);
+});
+
+test('edit and delete: staff, rooms, room types, menu, tasks, guests', async () => {
+  // Staff: a fresh account can be deleted; one with work on record cannot; nobody deletes themselves
+  let res = await call('POST', '/api/staff', { name: 'Temp Desk', email: `temp.${Date.now()}@demo-hotel.in`, password: 'Wayinn@123', role: 'front_desk' }, tok.owner);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  assert.equal((await call('DELETE', `/api/staff/${res.data.id}`, null, tok.owner)).status, 200);
+  const fd = (await pool.query(`SELECT id FROM users WHERE email = 'frontdesk@demo-hotel.in'`)).rows[0];
+  res = await call('DELETE', `/api/staff/${fd.id}`, null, tok.owner);
+  assert.equal(res.status, 409, JSON.stringify(res.data));
+  assert.match(res.data.error, /Account active/);
+  const me = (await pool.query(`SELECT id FROM users WHERE email = 'owner@demo-hotel.in'`)).rows[0];
+  assert.equal((await call('DELETE', `/api/staff/${me.id}`, null, tok.owner)).status, 400);
+  assert.equal((await call('DELETE', `/api/staff/${me.id}`, null, tok.frontdesk)).status, 403);
+
+  // Room type + room: edit number/type, delete unused, refuse used
+  const rt = (await call('POST', '/api/room-types', { name: 'Temp Type', base_rate_paise: 100000 }, tok.owner)).data;
+  const room = (await call('POST', '/api/rooms', { number: `T${Date.now() % 100000}`, room_type_id: rt.id }, tok.owner)).data;
+  res = await call('PUT', `/api/rooms/${room.id}`, { number: `${room.number}A`, floor: '9' }, tok.owner);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.number, `${room.number}A`);
+  assert.equal((await call('DELETE', `/api/room-types/${rt.id}`, null, tok.owner)).status, 409); // room still uses it
+  assert.equal((await call('DELETE', `/api/rooms/${room.id}`, null, tok.owner)).status, 200);
+  assert.equal((await call('DELETE', `/api/room-types/${rt.id}`, null, tok.owner)).status, 200);
+  const r101 = (await call('GET', '/api/rooms', null, tok.owner)).data.find((x) => x.number === '101');
+  res = await call('DELETE', `/api/rooms/${r101.id}`, null, tok.owner);
+  assert.equal(res.status, 409, 'a room with bookings cannot be deleted');
+  assert.equal((await call('DELETE', `/api/rooms/${r101.id}`, null, tok.frontdesk)).status, 403);
+
+  // Menu: item that was ordered can be deleted (orders keep their copy); category/station only when empty
+  const menu = (await call('GET', '/api/menu', null, tok.owner)).data;
+  const cat = (await call('POST', '/api/menu/categories', { name: 'Temp Cat' }, tok.owner)).data;
+  const st = (await call('POST', '/api/stations', { name: 'Temp Station' }, tok.owner)).data;
+  const item = (await call('POST', '/api/menu/items', { name: 'Temp Lassi', price_paise: 5000, category_id: cat.id, station_id: st.id }, tok.owner)).data;
+  res = await call('POST', '/api/orders', { order_type: 'takeaway', items: [{ menu_item_id: item.id, quantity: 1 }] }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const order = res.data;
+  assert.equal((await call('DELETE', `/api/menu/items/${item.id}`, null, tok.owner)).status, 409, 'item in an open order');
+  assert.equal((await call('DELETE', `/api/menu/categories/${cat.id}`, null, tok.owner)).status, 409);
+  assert.equal((await call('DELETE', `/api/stations/${st.id}`, null, tok.owner)).status, 409);
+  await call('POST', `/api/orders/${order.id}/cancel`, { reason: 'test cleanup' }, tok.owner);
+  assert.equal((await call('DELETE', `/api/menu/items/${item.id}`, null, tok.owner)).status, 200);
+  const kept = (await call('GET', `/api/orders/${order.id}`, null, tok.owner)).data;
+  assert.equal(kept.items[0].name, 'Temp Lassi');
+  assert.equal((await call('DELETE', `/api/menu/categories/${cat.id}`, null, tok.owner)).status, 200);
+  assert.equal((await call('DELETE', `/api/stations/${st.id}`, null, tok.owner)).status, 200);
+  assert.ok(menu.items.length > 0);
+
+  // Housekeeping task: edit, delete pending, cancel in-progress (room back to dirty), done is kept
+  const r102 = (await call('GET', '/api/rooms', null, tok.owner)).data.find((x) => x.number === '102');
+  let t = (await call('POST', '/api/housekeeping/tasks', { room_id: r102.id, task_type: 'cleaning' }, tok.frontdesk)).data;
+  res = await call('PATCH', `/api/housekeeping/tasks/${t.id}`, { action: 'update', priority: 'urgent', task_type: 'deep_clean', notes: 'Carpet' }, tok.frontdesk);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.priority, 'urgent');
+  assert.equal(res.data.task_type, 'deep_clean');
+  assert.equal((await call('DELETE', `/api/housekeeping/tasks/${t.id}`, null, tok.frontdesk)).status, 200);
+  await pool.query(`UPDATE rooms SET hk_status = 'dirty' WHERE id = $1`, [r102.id]);
+  t = (await call('POST', '/api/housekeeping/tasks', { room_id: r102.id, task_type: 'cleaning' }, tok.frontdesk)).data;
+  await call('PATCH', `/api/housekeeping/tasks/${t.id}`, { action: 'start' }, tok.frontdesk);
+  assert.equal((await call('DELETE', `/api/housekeeping/tasks/${t.id}`, null, tok.frontdesk)).status, 409);
+  assert.equal((await call('PATCH', `/api/housekeeping/tasks/${t.id}`, { action: 'cancel' }, tok.frontdesk)).status, 200);
+  assert.equal((await pool.query('SELECT hk_status FROM rooms WHERE id = $1', [r102.id])).rows[0].hk_status, 'dirty');
+  await pool.query(`UPDATE rooms SET hk_status = 'ready' WHERE id = $1`, [r102.id]);
+
+  // Guests: delete a guest without bookings; merge a duplicate (bookings move, blanks filled)
+  const lone = (await call('POST', '/api/guests', { full_name: 'Lone Guest', phone: '9444444444' }, tok.owner)).data;
+  assert.equal((await call('DELETE', `/api/guests/${lone.id}`, null, tok.owner)).status, 200);
+  res = await call('POST', '/api/bookings', {
+    guest: { full_name: 'Dup Guest', phone: '9555555555', email: 'dup@x.in' },
+    stays: [{ room_type_id: r102.room_type_id, check_in_date: addDays(today, 5), check_out_date: addDays(today, 6) }],
+  }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const dupBooking = res.data;
+  assert.equal((await call('DELETE', `/api/guests/${dupBooking.guest_id}`, null, tok.owner)).status, 409);
+  const keep = (await call('POST', '/api/guests', { full_name: 'Dup Guest', phone: '9555555555' }, tok.owner)).data;
+  res = await call('POST', `/api/guests/${dupBooking.guest_id}/merge`, { into_guest_id: keep.id }, tok.owner);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.email, 'dup@x.in');
+  assert.equal((await call('GET', `/api/bookings/${dupBooking.id}`, null, tok.owner)).data.guest_id, keep.id);
+  assert.equal((await call('GET', `/api/guests/${dupBooking.guest_id}`, null, tok.owner)).status, 404);
+  assert.equal((await call('POST', `/api/guests/${keep.id}/merge`, { into_guest_id: keep.id }, tok.owner)).status, 400);
+  await call('POST', `/api/bookings/${dupBooking.id}/cancel`, { reason: 'test cleanup' }, tok.owner);
+});
+
+test('super admin: edit hotel, delete plan and hotel safely', async () => {
+  const p = (await call('POST', '/api/platform/auth/login', { email: 'admin@wayinn.app', password: 'Wayinn@123' })).data;
+  const plan = (await call('POST', '/api/platform/plans', { code: `tmp${Date.now() % 100000}`, name: 'Temp plan', max_rooms: 5, price_monthly_paise: 0 }, p.token)).data;
+  const slug = `del-${Date.now()}`;
+  let res = await call('POST', '/api/platform/hotels', { name: 'Delete Me Inn', slug, plan_id: plan.id, owner: { name: 'D Owner', email: `${slug}@x.in`, password: 'Password1' } }, p.token);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const hid = res.data.hotel.id;
+  res = await call('PATCH', `/api/platform/hotels/${hid}`, { name: 'Delete Me Hotel', city: 'Ludhiana', phone: '9000011111' }, p.token);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.city, 'Ludhiana');
+  // Give the hotel some data so the cascade is exercised
+  const ownerTok = (await call('POST', '/api/auth/login', { email: `${slug}@x.in`, password: 'Password1' })).data.token;
+  const rt = (await call('POST', '/api/room-types', { name: 'Std', base_rate_paise: 100000 }, ownerTok)).data;
+  const room = (await call('POST', '/api/rooms', { number: '1', room_type_id: rt.id }, ownerTok)).data;
+  res = await call('POST', '/api/bookings', { guest: { full_name: 'G', phone: '9666666666' }, stays: [{ room_type_id: rt.id, room_id: room.id, check_in_date: today, check_out_date: addDays(today, 1) }] }, ownerTok);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+
+  assert.equal((await call('DELETE', `/api/platform/plans/${plan.id}`, null, p.token)).status, 409, 'plan in use');
+  assert.equal((await call('DELETE', `/api/platform/hotels/${hid}`, { confirm: slug }, p.token)).status, 409, 'must be cancelled first');
+  await call('PATCH', `/api/platform/hotels/${hid}`, { subscription_status: 'cancelled' }, p.token);
+  assert.equal((await call('DELETE', `/api/platform/hotels/${hid}`, { confirm: 'wrong' }, p.token)).status, 400);
+  res = await call('DELETE', `/api/platform/hotels/${hid}`, { confirm: slug }, p.token);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM hotels WHERE id = $1', [hid])).rows[0].n, 0);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM bookings WHERE hotel_id = $1', [hid])).rows[0].n, 0);
+  assert.equal((await call('DELETE', `/api/platform/plans/${plan.id}`, null, p.token)).status, 200);
+  // Hotel staff cannot use super-admin deletes
+  assert.equal((await call('DELETE', `/api/platform/plans/${plan.id}`, null, tok.owner)).status, 401);
+});
