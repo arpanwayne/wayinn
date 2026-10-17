@@ -5,17 +5,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { fmtDateTime, label } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, useAction } from '../components/ui.jsx';
 
-const ROLES = ['owner', 'manager', 'front_desk', 'cashier', 'restaurant', 'kitchen', 'housekeeping', 'maintenance'];
-const ROLE_HINT = {
-  owner: 'Everything, including hotel settings',
-  manager: 'Everything except hotel settings',
-  front_desk: 'Bookings, check-in/out, payments, room orders',
-  cashier: 'Bills, payments and restaurant settlement',
-  restaurant: 'Restaurant orders and settlement',
-  kitchen: 'Kitchen screen only',
-  housekeeping: 'Housekeeping tasks and room status only — no bookings or money',
-  maintenance: 'Maintenance jobs only — no bookings or money',
-};
+const ROLES = ['owner', 'front_desk', 'kitchen'];
 
 export default function Staff() {
   const { user } = useAuth();
@@ -67,8 +57,7 @@ export default function Staff() {
               <Field label="Email (login)"><input className="input" type="email" name="staff-login-email" autoComplete="off" disabled={!!form.id} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
               <Field label="Phone"><input className="input" type="tel" name="staff-phone" autoComplete="off" inputMode="tel" value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
               <Field label="Role"><select className="input" value={form.role} disabled={form.id === user.id} onChange={(e) => setForm({ ...form, role: e.target.value, extra_permissions: [], revoked_permissions: [] })}>
-                {ROLES.filter((r) => r !== 'owner' || user.role === 'owner').map((r) => <option key={r} value={r}>{label(r)}</option>)}</select>
-                <div className="mt-1 text-xs text-ink-500">{ROLE_HINT[form.role]}</div></Field>
+                {ROLES.filter((r) => r !== 'owner' || user.role === 'owner').map((r) => <option key={r} value={r}>{label(r)}</option>)}</select></Field>
               {form.id && !form.resetPassword
                 ? <Field label="Password"><button type="button" className="btn-secondary w-full" onClick={() => setForm({ ...form, resetPassword: true, password: '' })}>Reset password…</button></Field>
                 : <Field label={form.id ? 'New password (min 8)' : 'Password (min 8)'}>
