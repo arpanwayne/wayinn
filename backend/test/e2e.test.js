@@ -442,3 +442,34 @@ test('super admin: edit hotel, delete plan and hotel safely', async () => {
   // Hotel staff cannot use super-admin deletes
   assert.equal((await call('DELETE', `/api/platform/plans/${plan.id}`, null, tok.owner)).status, 401);
 });
+
+test('guest stay count and last stay ignore cancelled and future bookings', async () => {
+  const rooms = (await call('GET', '/api/rooms', null, tok.owner)).data;
+  const r = rooms.find((x) => x.number === '102');
+  const phone = `98${Date.now() % 100000000}`;
+  let res = await call('POST', '/api/bookings', {
+    guest: { full_name: 'Count Check', phone },
+    stays: [{ room_type_id: r.room_type_id, check_in_date: addDays(today, 10), check_out_date: addDays(today, 11) }],
+  }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const gid = res.data.guest_id;
+  await call('POST', `/api/bookings/${res.data.id}/cancel`, { reason: 'test' }, tok.owner);
+  res = await call('POST', '/api/bookings', {
+    guest_id: gid, stays: [{ room_type_id: r.room_type_id, check_in_date: addDays(today, 20), check_out_date: addDays(today, 21) }],
+  }, tok.frontdesk);
+  assert.equal(res.status, 201, JSON.stringify(res.data));
+  const listed = (await call('GET', `/api/guests?q=${phone}`, null, tok.owner)).data.find((g) => g.id === gid);
+  assert.equal(listed.stay_count, 0);
+  assert.equal(listed.last_stay, null);
+  const profile = (await call('GET', `/api/guests/${gid}`, null, tok.owner)).data;
+  assert.equal(profile.stay_count, 0, 'profile and list must agree');
+  assert.equal(profile.stays.length, 2, 'both bookings are still listed in the history');
+  await call('POST', `/api/bookings/${res.data.id}/cancel`, { reason: 'test cleanup' }, tok.owner);
+});
+
+test('plans list says how many hotels use each plan', async () => {
+  const p = (await call('POST', '/api/platform/auth/login', { email: 'admin@wayinn.app', password: 'Wayinn@123' })).data;
+  const plans = (await call('GET', '/api/platform/plans', null, p.token)).data;
+  const used = (await pool.query('SELECT plan_id, count(*)::int AS n FROM hotels WHERE plan_id IS NOT NULL GROUP BY plan_id')).rows;
+  for (const pl of plans) assert.equal(pl.hotel_count, used.find((u) => Number(u.plan_id) === Number(pl.id))?.n || 0);
+});

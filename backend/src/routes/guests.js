@@ -37,6 +37,11 @@ export async function createGuest(db, hotelId, g) {
     [hotelId, ...vals]);
 }
 
+// A "stay" is a visit that actually happened: the guest checked in (and may have left). Cancelled, no-show and
+// future reservations are bookings, not stays, so they are left out of the count and of "last stay".
+const STAYED = `('checked_in','checked_out')`;
+const LAST_STAY_DATE = `CASE WHEN s.status = 'checked_out' THEN s.check_out_date ELSE s.check_in_date END`;
+
 // Hide ID documents & internal notes from roles without guests.manage
 const redact = (req, g) => (can(req, 'guests.manage') ? g : { ...g, id_number: g.id_number ? '••••' + String(g.id_number).slice(-4) : null, notes: undefined });
 
@@ -56,8 +61,8 @@ r.get('/guests', requirePerm('guests.view'), async (req, res) => {
     vals.push(q.toLowerCase());
   }
   const rows = await many(
-    `SELECT g.*, (SELECT count(*)::int FROM stays s WHERE s.guest_id = g.id AND s.status = 'checked_out') AS stay_count,
-            (SELECT max(check_out_date) FROM stays s WHERE s.guest_id = g.id) AS last_stay
+    `SELECT g.*, (SELECT count(*)::int FROM stays s WHERE s.guest_id = g.id AND s.status IN ${STAYED}) AS stay_count,
+            (SELECT max(${LAST_STAY_DATE}) FROM stays s WHERE s.guest_id = g.id AND s.status IN ${STAYED}) AS last_stay
        FROM guests g WHERE ${where} ORDER BY g.created_at DESC LIMIT 100`, vals);
   res.json(rows.map((g) => redact(req, g)));
 });
@@ -72,6 +77,7 @@ r.get('/guests/:id', requirePerm('guests.view'), async (req, res) => {
        FROM stays s JOIN bookings b ON b.id = s.booking_id JOIN room_types rt ON rt.id = s.room_type_id
        LEFT JOIN rooms r ON r.id = s.room_id LEFT JOIN folios f ON f.stay_id = s.id
       WHERE s.guest_id = $1 ORDER BY s.check_in_date DESC`, [id]);
+  g.stay_count = g.stays.filter((x) => ['checked_in', 'checked_out'].includes(x.status)).length;
   res.json(redact(req, g));
 });
 

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, request } from '../lib/api.js';
 import { store, useAuth } from '../lib/auth.jsx';
-import { rupees0, fmtDate, fmtDateTime } from '../lib/format.js';
+import { rupees0, fmtDate, fmtDateTime, label } from '../lib/format.js';
 import { Logo } from '../components/Layout.jsx';
 import { Badge, Modal, Field, Stat, Tabs, DeleteDialog, useAction, Loading } from '../components/ui.jsx';
 
@@ -101,7 +101,9 @@ export default function Platform() {
                 <td className="whitespace-nowrap text-right">
                   <button className="btn-ghost btn-sm" onClick={() => run(async () => { await api.put(`/platform/plans/${p.id}`, { active: !p.active }, P); load(); }, p.active ? 'Plan switched off' : 'Plan switched on')}>{p.active ? 'Switch off' : 'Switch on'}</button>
                   <button className="btn-secondary btn-sm" onClick={() => setPlanForm({ ...p, price: p.price_monthly_paise / 100 })}>Edit</button>
-                  <button className="btn-ghost btn-sm text-red-700" onClick={() => setDel({ kind: 'plan', ...p })}>Delete</button></td></tr>
+                  {p.hotel_count > 0
+                    ? <span className="ml-1 inline-block w-16 text-center text-xs text-ink-400" title="Hotels are on this plan. Move them first, or switch the plan off.">{p.hotel_count} hotel{p.hotel_count > 1 ? 's' : ''}</span>
+                    : <button className="btn-ghost btn-sm w-16 text-red-700" onClick={() => setDel({ kind: 'plan', ...p })}>Delete</button>}</td></tr>
             ))}</tbody></table>
           </div>
         )}
@@ -182,7 +184,7 @@ export default function Platform() {
             <Field label="Trial ends"><input type="date" className="input" value={detail.edit.trial_ends_at} onChange={(e) => setE({ trial_ends_at: e.target.value })} /></Field>
             <div><span className="label">Link name · GSTIN</span>{detail.slug} · {detail.gstin || '—'}<div className="text-xs text-ink-500">Created {fmtDate(detail.created_at)}</div></div>
           </div>
-          <table className="table"><tbody>{detail.users.map((u) => <tr key={u.id}><td>{u.name}<div className="text-xs text-ink-500">{u.email}</div></td><td>{u.role}</td><td>{u.active ? 'Active' : 'Inactive'}</td><td className="text-ink-500">{fmtDateTime(u.last_login_at)}</td></tr>)}</tbody></table>
+          <table className="table"><tbody>{detail.users.map((u) => <tr key={u.id}><td>{u.name}<div className="text-xs text-ink-500">{u.email}</div></td><td>{label(u.role)}</td><td>{u.active ? 'Active' : 'Inactive'}</td><td className="text-ink-500">{fmtDateTime(u.last_login_at)}</td></tr>)}</tbody></table>
         </div>}
       </Modal>
       <DeleteDialog open={!!del} title={del?.kind === 'hotel' ? `Delete ${del?.name} and all its data?` : `Delete plan ${del?.name}?`}

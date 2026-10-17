@@ -23,7 +23,8 @@ r.get('/platform/stats', async (_req, res) => {
             (SELECT COALESCE(SUM(p.price_monthly_paise),0) FROM hotels h JOIN plans p ON p.id = h.plan_id WHERE h.subscription_status = 'active') AS mrr_paise`));
 });
 
-r.get('/platform/plans', async (_req, res) => res.json(await many('SELECT * FROM plans ORDER BY price_monthly_paise')));
+r.get('/platform/plans', async (_req, res) => res.json(await many(
+  'SELECT p.*, (SELECT count(*)::int FROM hotels h WHERE h.plan_id = p.id) AS hotel_count FROM plans p ORDER BY price_monthly_paise')));
 const planSchema = z.object({
   code: z.string().min(2), name: z.string().min(2), max_rooms: z.number().int().positive(), max_staff: z.number().int().positive().nullable().optional(),
   price_monthly_paise: z.number().int().min(0), features: z.record(z.string(), z.any()).default({}), active: z.boolean().default(true),
