@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { one, many, tx } from '../db.js';
 import { parse, idParam } from '../lib/validate.js';
 import { requirePlatform, signToken } from '../middleware/auth.js';
-import { notFound } from '../lib/errors.js';
+import { notFound, badRequest, conflict } from '../lib/errors.js';
+import { removeRow } from '../lib/remove.js';
 import { audit } from '../lib/audit.js';
 
 const r = Router();
@@ -40,6 +41,17 @@ r.put('/platform/plans/:id', async (req, res) => {
     [...keys.map((k) => (k === 'features' ? JSON.stringify(b[k]) : b[k])), idParam(req.params.id)]);
   if (!row) throw notFound();
   res.json(row);
+});
+
+// A plan can be deleted only while no hotel is on it; otherwise switch it off (active = false) so it
+// is no longer offered to new hotels.
+r.delete('/platform/plans/:id', async (req, res) => {
+  const id = idParam(req.params.id);
+  const { n } = await one('SELECT count(*)::int AS n FROM hotels WHERE plan_id = $1', [id]);
+  if (n) throw conflict(`${n} hotel(s) are on this plan. Move them to another plan, or switch the plan off instead.`);
+  const row = await removeRow('DELETE FROM plans WHERE id = $1 RETURNING id, name', [id], 'This plan is still in use.');
+  await audit({ ...req, hotelId: null }, 'platform.plan_deleted', 'plan', id, { name: row.name, by: req.admin.email });
+  res.json({ ok: true });
 });
 
 r.get('/platform/hotels', async (_req, res) => {
@@ -88,14 +100,37 @@ r.patch('/platform/hotels/:id', async (req, res) => {
   const b = parse(z.object({
     plan_id: z.number().int().nullable().optional(),
     subscription_status: z.enum(['trial', 'active', 'past_due', 'suspended', 'cancelled']).optional(),
-    trial_ends_at: z.string().nullable().optional(), name: z.string().optional(),
+    trial_ends_at: z.string().nullable().optional(), name: z.string().min(2).optional(),
+    city: z.string().nullable().optional(), state: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(), email: z.string().nullable().optional(),
   }), req.body);
   const keys = Object.keys(b);
+  if (!keys.length) throw badRequest('Nothing to update');
+  if (b.plan_id) {
+    const plan = await one('SELECT id FROM plans WHERE id = $1', [b.plan_id]);
+    if (!plan) throw badRequest('Unknown plan');
+  }
   const row = await one(`UPDATE hotels SET ${keys.map((k, i) => `${k} = $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1} RETURNING *`,
     [...keys.map((k) => b[k]), id]);
   if (!row) throw notFound();
   await audit({ ...req, hotelId: id }, 'platform.hotel_updated', 'hotel', id, { ...b, by: req.admin.email });
   res.json(row);
+});
+
+// Permanently remove a hotel and ALL its data. Only for hotels already marked cancelled, and the
+// hotel's link name (slug) must be typed to confirm. Download the export first if the data is needed.
+r.delete('/platform/hotels/:id', async (req, res) => {
+  const id = idParam(req.params.id);
+  const b = parse(z.object({ confirm: z.string() }), req.body || {});
+  const h = await one('SELECT id, name, slug, subscription_status FROM hotels WHERE id = $1', [id]);
+  if (!h) throw notFound();
+  if (h.subscription_status !== 'cancelled') throw conflict('Set the hotel to "cancelled" before deleting it.');
+  if (b.confirm.trim() !== h.slug) throw badRequest(`Type the hotel link name "${h.slug}" to confirm`);
+  await tx(async (db) => {
+    await db.query('DELETE FROM hotels WHERE id = $1', [id]);
+    await audit({ ...req, hotelId: null }, 'platform.hotel_deleted', 'hotel', id, { name: h.name, slug: h.slug, by: req.admin.email }, db);
+  });
+  res.json({ ok: true });
 });
 
 // Support access: short-lived token as the hotel owner (audited)

@@ -7,6 +7,7 @@ import { requireStaff, requirePerm } from '../middleware/auth.js';
 import { ROLES, PERMISSIONS, effectivePermissions } from '../lib/permissions.js';
 import { forbidden, notFound, badRequest } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
+import { removeRow } from '../lib/remove.js';
 
 const r = Router();
 r.use('/staff', requireStaff, requirePerm('staff.manage'));
@@ -60,6 +61,24 @@ r.patch('/staff/:id', async (req, res) => {
   const u = await one(`UPDATE users SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND hotel_id = $${vals.length} RETURNING ${cols}`, vals);
   await audit(req, 'staff.updated', 'user', id, { changed: Object.keys(b).filter((k) => k !== 'password'), password_reset: !!b.password });
   res.json(u);
+});
+
+// Permanent delete is only for accounts that never did anything (e.g. created by mistake).
+// Anyone with history (bookings, payments, tasks…) is kept for the records and should be deactivated.
+r.delete('/staff/:id', async (req, res) => {
+  const id = idParam(req.params.id);
+  const existing = await one('SELECT id, role, email FROM users WHERE id = $1 AND hotel_id = $2', [id, req.hotelId]);
+  if (!existing) throw notFound();
+  if (id === req.user.id) throw badRequest('You cannot delete your own account');
+  if (existing.role === 'owner' && req.user.role !== 'owner') throw forbidden('Only an owner can delete an owner account');
+  if (existing.role === 'owner') {
+    const { n } = await one(`SELECT count(*)::int AS n FROM users WHERE hotel_id = $1 AND role = 'owner' AND active AND id <> $2`, [req.hotelId, id]);
+    if (!n) throw badRequest('The hotel needs at least one active owner');
+  }
+  await removeRow('DELETE FROM users WHERE id = $1 AND hotel_id = $2 RETURNING id', [id, req.hotelId],
+    'This person has work on record (bookings, bills, tasks or notes), so the account cannot be deleted. Untick "Account active" to switch it off instead.');
+  await audit(req, 'staff.deleted', 'user', id, { email: existing.email, role: existing.role });
+  res.json({ ok: true });
 });
 
 export default r;

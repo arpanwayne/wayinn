@@ -3,7 +3,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { ago, label } from '../lib/format.js';
-import { PageHeader, Badge, Loading, Modal, Field, Tabs, Empty, PromptDialog, useAction } from '../components/ui.jsx';
+import { PageHeader, Badge, Loading, Modal, Field, Tabs, Empty, PromptDialog, DeleteDialog, useAction } from '../components/ui.jsx';
 
 export default function Housekeeping() {
   const { can, user } = useAuth();
@@ -13,6 +13,8 @@ export default function Housekeeping() {
   const [newTask, setNewTask] = useState(null);
   const [lost, setLost] = useState(null);
   const [returning, setReturning] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [del, setDel] = useState(null);
   const [run, busy] = useAction();
   if (!data) return <Loading />;
   const manager = can('hk.manage');
@@ -50,6 +52,7 @@ export default function Housekeeping() {
                       <option value="">Assign…</option>{data.staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   )}
+                  {manager && <button className="btn-ghost btn-sm" onClick={() => setEdit({ ...t, assigned_to: t.assigned_to || '', notes: t.notes || '' })}>Edit</button>}
                   <div className="flex-1" />
                   {t.status === 'pending' && <button className="btn-secondary btn-sm" disabled={busy} onClick={() => act(t, 'start')}>Start</button>}
                   <button className="btn-primary btn-sm" disabled={busy} onClick={() => act(t, 'complete')}>Done</button>
@@ -96,6 +99,29 @@ export default function Housekeeping() {
           <Field label="Notes" className="col-span-2"><input className="input" value={newTask.notes} onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })} /></Field>
         </div>}
       </Modal>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={`Task · room ${edit?.room_number || ''}`}
+        footer={<>
+          {edit?.status === 'pending' && <button className="btn-ghost text-red-700" onClick={() => setDel(edit)}>Delete</button>}
+          <button className="btn-ghost mr-auto" disabled={busy} onClick={() => run(async () => {
+            await api.patch(`/housekeeping/tasks/${edit.id}`, { action: 'cancel' }); setEdit(null); reload();
+          }, 'Task cancelled')}>Cancel task</button>
+          <button className="btn-secondary" onClick={() => setEdit(null)}>Back</button>
+          <button className="btn-primary" disabled={busy} onClick={() => run(async () => {
+            await api.patch(`/housekeeping/tasks/${edit.id}`, { action: 'update', task_type: edit.task_type, priority: edit.priority, notes: edit.notes,
+              assigned_to: edit.assigned_to ? Number(edit.assigned_to) : null });
+            setEdit(null); reload();
+          }, 'Task saved')}>Save</button></>}>
+        {edit && <div className="grid grid-cols-2 gap-3">
+          <Field label="Type"><select className="input" value={edit.task_type} onChange={(e) => setEdit({ ...edit, task_type: e.target.value })}>{['cleaning', 'inspection', 'turndown', 'deep_clean', 'request'].map((x) => <option key={x} value={x}>{label(x)}</option>)}</select></Field>
+          <Field label="Priority"><select className="input" value={edit.priority} onChange={(e) => setEdit({ ...edit, priority: e.target.value })}>{['low', 'normal', 'high', 'urgent'].map((x) => <option key={x}>{x}</option>)}</select></Field>
+          <Field label="Assign to" className="col-span-2"><select className="input" value={edit.assigned_to} onChange={(e) => setEdit({ ...edit, assigned_to: e.target.value })}><option value="">Unassigned</option>{data.staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+          <Field label="Notes" className="col-span-2"><input className="input" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></Field>
+        </div>}
+      </Modal>
+      <DeleteDialog open={!!del} title={`Delete task for room ${del?.room_number || ''}?`}
+        message="Use this for a task made by mistake. It is removed for good. To keep a record, use Cancel task instead."
+        onClose={() => setDel(null)}
+        onConfirm={() => run(async () => { await api.del(`/housekeeping/tasks/${del.id}`); setDel(null); setEdit(null); reload(); }, 'Task deleted').catch(() => setDel(null))} />
       <PromptDialog open={!!returning} title={`Returned · ${returning?.item || ''}`} label="Returned to (name)" confirmLabel="Mark returned" minLength={2} onClose={() => setReturning(null)}
         onSubmit={(to) => run(async () => { await api.patch(`/lost-found/${returning.id}`, { status: 'returned', returned_to: to }); setReturning(null); lf.reload(); }, 'Marked as returned')} />
       <Modal open={!!lost} onClose={() => setLost(null)} title="Log lost & found item"

@@ -4,7 +4,7 @@ import { api, request } from '../lib/api.js';
 import { store, useAuth } from '../lib/auth.jsx';
 import { rupees0, fmtDate, fmtDateTime } from '../lib/format.js';
 import { Logo } from '../components/Layout.jsx';
-import { Badge, Modal, Field, Stat, Tabs, useAction, Loading } from '../components/ui.jsx';
+import { Badge, Modal, Field, Stat, Tabs, DeleteDialog, useAction, Loading } from '../components/ui.jsx';
 
 const P = { scope: 'platform' };
 
@@ -38,7 +38,14 @@ export default function Platform() {
   const [form, setForm] = useState(null);
   const [planForm, setPlanForm] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [del, setDel] = useState(null); // { kind: 'hotel' | 'plan', ...row }
   const [run, busy] = useAction();
+  const openHotel = async (id) => {
+    const h = await api.get(`/platform/hotels/${id}`, P);
+    setDetail({ ...h, edit: { name: h.name || '', city: h.city || '', state: h.state || '', phone: h.phone || '', email: h.email || '',
+      plan_id: h.plan_id || '', subscription_status: h.subscription_status, trial_ends_at: h.trial_ends_at ? h.trial_ends_at.slice(0, 10) : '' } });
+  };
+  const setE = (p) => setDetail({ ...detail, edit: { ...detail.edit, ...p } });
 
   const load = async () => {
     try {
@@ -65,16 +72,17 @@ export default function Platform() {
         <Tabs tabs={[['hotels', 'Hotels'], ['plans', 'Plans']]} value={tab} onChange={setTab} />
         {tab === 'hotels' && (
           <div className="card overflow-x-auto">
-            <div className="flex justify-end p-3"><button className="btn-primary" onClick={() => setForm({ name: '', slug: '', city: '', phone: '', email: '', gstin: '', plan_id: plans[0]?.id || '', trial_days: 14, owner: { name: '', email: '', phone: '', password: '' } })}>+ Onboard hotel</button></div>
+            <div className="flex justify-end p-3"><button className="btn-primary" onClick={() => setForm({ name: '', slug: '', city: '', phone: '', email: '', gstin: '', plan_id: plans.find((p) => p.active)?.id || '', trial_days: 14, owner: { name: '', email: '', phone: '', password: '' } })}>+ Onboard hotel</button></div>
             <table className="table">
               <thead><tr><th>Hotel</th><th>Plan</th><th>Rooms</th><th>Staff</th><th>Status</th><th>Last activity</th><th /></tr></thead>
               <tbody>{hotels.map((h) => (
                 <tr key={h.id}>
-                  <td><button className="link" onClick={async () => setDetail(await api.get(`/platform/hotels/${h.id}`, P))}>{h.name}</button><div className="text-xs text-ink-500">{h.slug} · {h.city}</div></td>
+                  <td><button className="link" onClick={() => run(() => openHotel(h.id))}>{h.name}</button><div className="text-xs text-ink-500">{h.slug} · {h.city}</div></td>
                   <td>{h.plan || '—'}</td><td>{h.rooms}{h.max_rooms ? ` / ${h.max_rooms}` : ''}</td><td>{h.staff}</td>
                   <td><Badge status={h.subscription_status} />{h.subscription_status === 'trial' && h.trial_ends_at && <div className="text-xs text-ink-500">ends {fmtDate(h.trial_ends_at)}</div>}</td>
                   <td className="text-ink-500">{fmtDateTime(h.last_activity)}</td>
                   <td className="whitespace-nowrap text-right">
+                    <button className="btn-ghost btn-sm" onClick={() => run(() => openHotel(h.id))}>Edit</button>
                     <select className="input w-auto py-1 text-xs" value={h.subscription_status} onChange={(e) => run(async () => { await api.patch(`/platform/hotels/${h.id}`, { subscription_status: e.target.value }, P); load(); }, 'Updated')}>
                       {['trial', 'active', 'past_due', 'suspended', 'cancelled'].map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -88,9 +96,12 @@ export default function Platform() {
           <div className="card overflow-x-auto">
             <div className="flex justify-end p-3"><button className="btn-primary" onClick={() => setPlanForm({ code: '', name: '', max_rooms: 20, max_staff: 10, price: '' })}>+ Plan</button></div>
             <table className="table"><tbody>{plans.map((p) => (
-              <tr key={p.id}><td className="font-semibold">{p.name}<div className="text-xs text-ink-500">{p.code}</div></td><td>Up to {p.max_rooms} rooms</td><td>{p.max_staff ? `${p.max_staff} staff` : 'Unlimited staff'}</td>
+              <tr key={p.id} className={p.active ? '' : 'opacity-50'}><td className="font-semibold">{p.name}<div className="text-xs text-ink-500">{p.code}{!p.active && ' · not offered'}</div></td><td>Up to {p.max_rooms} rooms</td><td>{p.max_staff ? `${p.max_staff} staff` : 'Unlimited staff'}</td>
                 <td className="tabular-nums">{rupees0(p.price_monthly_paise)}/month</td>
-                <td className="text-right"><button className="btn-secondary btn-sm" onClick={() => setPlanForm({ ...p, price: p.price_monthly_paise / 100 })}>Edit</button></td></tr>
+                <td className="whitespace-nowrap text-right">
+                  <button className="btn-ghost btn-sm" onClick={() => run(async () => { await api.put(`/platform/plans/${p.id}`, { active: !p.active }, P); load(); }, p.active ? 'Plan switched off' : 'Plan switched on')}>{p.active ? 'Switch off' : 'Switch on'}</button>
+                  <button className="btn-secondary btn-sm" onClick={() => setPlanForm({ ...p, price: p.price_monthly_paise / 100 })}>Edit</button>
+                  <button className="btn-ghost btn-sm text-red-700" onClick={() => setDel({ kind: 'plan', ...p })}>Delete</button></td></tr>
             ))}</tbody></table>
           </div>
         )}
@@ -109,7 +120,7 @@ export default function Platform() {
           <Field label="Phone"><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="GSTIN"><input className="input" value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })} /></Field>
-          <Field label="Plan"><select className="input" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="Plan"><select className="input" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>{plans.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
           <Field label="Trial days"><input type="number" className="input" value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: e.target.value })} /></Field>
           <div className="sm:col-span-3"><div className="label mt-2">Owner account</div></div>
           <Field label="Owner name"><input className="input" value={form.owner.name} onChange={(e) => setForm({ ...form, owner: { ...form.owner, name: e.target.value } })} /></Field>
@@ -140,6 +151,14 @@ export default function Platform() {
       </Modal>
       <Modal open={!!detail} onClose={() => setDetail(null)} title={detail?.name} wide
         footer={detail && <>
+          <button className="btn-ghost mr-auto text-red-700" onClick={() => setDel({ kind: 'hotel', ...detail })}>Delete hotel</button>
+          <button className="btn-secondary" disabled={busy} onClick={() => run(async () => {
+            const e = detail.edit;
+            if (e.name.trim().length < 2) throw new Error('Hotel name is too short');
+            await api.patch(`/platform/hotels/${detail.id}`, { name: e.name.trim(), city: e.city || null, state: e.state || null, phone: e.phone || null, email: e.email || null,
+              plan_id: e.plan_id ? Number(e.plan_id) : null, subscription_status: e.subscription_status, trial_ends_at: e.trial_ends_at || null }, P);
+            setDetail(null); load();
+          }, 'Hotel saved')}>Save changes</button>
           <a className="btn-secondary" href="#" onClick={async (e) => {
             e.preventDefault();
             const res = await request('GET', `/platform/hotels/${detail.id}/export`, null, { scope: 'platform', raw: true });
@@ -150,13 +169,32 @@ export default function Platform() {
           })}>Support login (1 hour)</button>
         </>}>
         {detail && <div className="space-y-3 text-sm">
-          <div className="grid grid-cols-2 gap-2">
-            <div><span className="label">GSTIN</span>{detail.gstin || '—'}</div><div><span className="label">Contact</span>{detail.phone} {detail.email}</div>
-            <div><span className="label">Created</span>{fmtDate(detail.created_at)}</div><div><span className="label">Status</span><Badge status={detail.subscription_status} /></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Hotel name"><input className="input" value={detail.edit.name} onChange={(e) => setE({ name: e.target.value })} /></Field>
+            <Field label="City"><input className="input" value={detail.edit.city} onChange={(e) => setE({ city: e.target.value })} /></Field>
+            <Field label="State"><input className="input" value={detail.edit.state} onChange={(e) => setE({ state: e.target.value })} /></Field>
+            <Field label="Phone"><input className="input" value={detail.edit.phone} onChange={(e) => setE({ phone: e.target.value })} /></Field>
+            <Field label="Email"><input className="input" value={detail.edit.email} onChange={(e) => setE({ email: e.target.value })} /></Field>
+            <Field label="Plan"><select className="input" value={detail.edit.plan_id} onChange={(e) => setE({ plan_id: e.target.value })}>
+              <option value="">No plan</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}{p.active ? '' : ' (not offered)'}</option>)}</select></Field>
+            <Field label="Status"><select className="input" value={detail.edit.subscription_status} onChange={(e) => setE({ subscription_status: e.target.value })}>
+              {['trial', 'active', 'past_due', 'suspended', 'cancelled'].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
+            <Field label="Trial ends"><input type="date" className="input" value={detail.edit.trial_ends_at} onChange={(e) => setE({ trial_ends_at: e.target.value })} /></Field>
+            <div><span className="label">Link name · GSTIN</span>{detail.slug} · {detail.gstin || '—'}<div className="text-xs text-ink-500">Created {fmtDate(detail.created_at)}</div></div>
           </div>
           <table className="table"><tbody>{detail.users.map((u) => <tr key={u.id}><td>{u.name}<div className="text-xs text-ink-500">{u.email}</div></td><td>{u.role}</td><td>{u.active ? 'Active' : 'Inactive'}</td><td className="text-ink-500">{fmtDateTime(u.last_login_at)}</td></tr>)}</tbody></table>
         </div>}
       </Modal>
+      <DeleteDialog open={!!del} title={del?.kind === 'hotel' ? `Delete ${del?.name} and all its data?` : `Delete plan ${del?.name}?`}
+        typeToConfirm={del?.kind === 'hotel' ? del.slug : undefined} confirmLabel={del?.kind === 'hotel' ? 'Delete everything' : 'Delete'}
+        message={del?.kind === 'hotel'
+          ? 'This permanently removes the hotel with every booking, bill, guest, staff login and report. It cannot be undone. Only a hotel set to "cancelled" can be deleted. Use "Export data" first if the records are needed.'
+          : 'A plan can only be deleted while no hotel is on it. To stop offering it but keep it for existing hotels, use "Switch off".'}
+        onClose={() => setDel(null)}
+        onConfirm={(typed) => run(async () => {
+          if (del.kind === 'hotel') await api.del(`/platform/hotels/${del.id}`, { confirm: typed }, P); else await api.del(`/platform/plans/${del.id}`, null, P);
+          setDel(null); setDetail(null); load();
+        }, 'Deleted').catch(() => setDel(null))} />
     </div>
   );
 }

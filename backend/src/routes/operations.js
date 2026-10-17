@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { one, many, tx } from '../db.js';
 import { parse, idParam } from '../lib/validate.js';
 import { requireStaff, requirePerm, can } from '../middleware/auth.js';
-import { notFound, badRequest, forbidden } from '../lib/errors.js';
+import { notFound, badRequest, forbidden, conflict } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { roomBoard } from '../lib/rooms.js';
 import { hotelToday } from '../lib/dates.js';
@@ -56,6 +56,7 @@ r.patch('/housekeeping/tasks/:id', requirePerm('hk.manage', 'hk.work'), async (r
   const b = parse(z.object({
     action: z.enum(['assign', 'start', 'complete', 'cancel', 'update']),
     assigned_to: z.number().int().nullable().optional(), priority: z.enum(PRIORITY).optional(), notes: z.string().optional(),
+    task_type: z.enum(['cleaning', 'inspection', 'turndown', 'deep_clean', 'request']).optional(),
     room_status_after: z.enum(['ready', 'inspected']).optional(), // what to set the room to on completion
   }), req.body);
   const out = await tx(async (db) => {
@@ -68,7 +69,10 @@ r.patch('/housekeeping/tasks/:id', requirePerm('hk.manage', 'hk.work'), async (r
       case 'assign':
         await db.query('UPDATE hk_tasks SET assigned_to = $1 WHERE id = $2', [b.assigned_to ?? null, id]); break;
       case 'update':
-        await db.query('UPDATE hk_tasks SET priority = COALESCE($1, priority), notes = COALESCE($2, notes) WHERE id = $3', [b.priority ?? null, b.notes ?? null, id]); break;
+        if (!['pending', 'in_progress'].includes(t.status)) throw badRequest(`Task is ${t.status}`);
+        await db.query(`UPDATE hk_tasks SET priority = COALESCE($1, priority), notes = COALESCE($2, notes), task_type = COALESCE($3, task_type),
+                        assigned_to = CASE WHEN $5 THEN $4 ELSE assigned_to END WHERE id = $6`,
+          [b.priority ?? null, b.notes ?? null, b.task_type ?? null, b.assigned_to ?? null, b.assigned_to !== undefined, id]); break;
       case 'start':
         if (t.status !== 'pending') throw badRequest(`Task is ${t.status}`);
         await db.query(`UPDATE hk_tasks SET status = 'in_progress', started_at = now(), assigned_to = COALESCE(assigned_to, $1) WHERE id = $2`, [req.user.id, id]);
@@ -93,12 +97,30 @@ r.patch('/housekeeping/tasks/:id', requirePerm('hk.manage', 'hk.work'), async (r
         break;
       }
       case 'cancel':
-        await db.query(`UPDATE hk_tasks SET status = 'cancelled' WHERE id = $1`, [id]); break;
+        if (!['pending', 'in_progress'].includes(t.status)) throw badRequest(`Task is ${t.status}`);
+        await db.query(`UPDATE hk_tasks SET status = 'cancelled' WHERE id = $1`, [id]);
+        // A room that was being cleaned for this task goes back to dirty, so it is not left stuck in "cleaning"
+        if (t.status === 'in_progress' && ['cleaning', 'deep_clean'].includes(t.task_type)) {
+          await db.query(`UPDATE rooms SET hk_status = 'dirty' WHERE id = $1 AND hk_status = 'cleaning'`, [t.room_id]);
+        }
+        break;
     }
     await audit(req, `hk.task_${b.action}`, 'hk_task', id, { room_id: t.room_id, assigned_to: b.assigned_to }, db);
     return db.one('SELECT * FROM hk_tasks WHERE id = $1', [id]);
   });
   res.json(out);
+});
+
+// Delete a task created by mistake. Finished tasks stay, they feed the housekeeping report.
+r.delete('/housekeeping/tasks/:id', requirePerm('hk.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const t = await one('SELECT id, room_id, status, task_type FROM hk_tasks WHERE id = $1 AND hotel_id = $2', [id, req.hotelId]);
+  if (!t) throw notFound();
+  if (t.status === 'done') throw conflict('This task is finished and kept for the housekeeping report.');
+  if (t.status === 'in_progress') throw conflict('Someone is working on this task. Cancel it first.');
+  await one('DELETE FROM hk_tasks WHERE id = $1 RETURNING id', [id]);
+  await audit(req, 'hk.task_deleted', 'hk_task', id, { room_id: t.room_id, type: t.task_type, status: t.status });
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------

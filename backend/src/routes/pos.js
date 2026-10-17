@@ -5,6 +5,7 @@ import { parse, idParam } from '../lib/validate.js';
 import { requireStaff, requirePerm, assertPerm } from '../middleware/auth.js';
 import { notFound, badRequest, conflict } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
+import { removeRow } from '../lib/remove.js';
 import { taxOn, taxSettings } from '../lib/money.js';
 import { hotelToday } from '../lib/dates.js';
 import { nextOrderNo, nextKotNo, nextInvoiceNo } from '../lib/sequences.js';
@@ -77,6 +78,54 @@ r.put('/menu/items/:id', requirePerm('menu.manage'), async (req, res) => {
     [...keys.map((k) => (jsonCols.has(k) ? JSON.stringify(b[k]) : b[k])), id, req.hotelId]);
   await audit(req, 'menu.item_updated', 'menu_item', id, { changed: keys, ...(b.price_paise !== undefined ? { price_from: before.price_paise, price_to: b.price_paise } : {}) });
   res.json(row);
+});
+
+// Delete a menu item. Past orders keep their own copy of the name and price, so history stays correct;
+// only an item sitting in an order that is still being prepared blocks the delete.
+r.delete('/menu/items/:id', requirePerm('menu.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const out = await tx(async (db) => {
+    const item = await db.one('SELECT id, name FROM menu_items WHERE id = $1 AND hotel_id = $2 FOR UPDATE', [id, req.hotelId]);
+    if (!item) throw notFound();
+    const active = await db.one(
+      `SELECT count(*)::int AS n FROM order_items i JOIN orders o ON o.id = i.order_id
+        WHERE i.menu_item_id = $1 AND NOT i.cancelled AND o.status NOT IN ('delivered','cancelled')`, [id]);
+    if (active.n) throw conflict('This item is in an order that is still open. Try again once that order is delivered or cancelled.');
+    await db.query('UPDATE order_items SET menu_item_id = NULL WHERE menu_item_id = $1', [id]);
+    await db.query('DELETE FROM menu_items WHERE id = $1', [id]);
+    await audit(req, 'menu.item_deleted', 'menu_item', id, { name: item.name }, db);
+    return { ok: true };
+  });
+  res.json(out);
+});
+
+r.delete('/menu/categories/:id', requirePerm('menu.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const { n } = await one('SELECT count(*)::int AS n FROM menu_items WHERE category_id = $1 AND hotel_id = $2', [id, req.hotelId]);
+  if (n) throw conflict(`${n} menu item(s) are in this category. Move or delete them first.`);
+  const row = await removeRow('DELETE FROM menu_categories WHERE id = $1 AND hotel_id = $2 RETURNING id, name', [id, req.hotelId], 'This category is still in use.');
+  await audit(req, 'menu.category_deleted', 'menu_category', id, { name: row.name });
+  res.json({ ok: true });
+});
+
+r.delete('/stations/:id', requirePerm('menu.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const out = await tx(async (db) => {
+    const st = await db.one('SELECT id, name FROM stations WHERE id = $1 AND hotel_id = $2 FOR UPDATE', [id, req.hotelId]);
+    if (!st) throw notFound();
+    const items = await db.one('SELECT count(*)::int AS n FROM menu_items WHERE station_id = $1', [id]);
+    if (items.n) throw conflict(`${items.n} menu item(s) are sent to this station. Move them to another station first.`);
+    const open = await db.one(`SELECT count(*)::int AS n FROM kots WHERE station_id = $1 AND status IN ('pending','preparing','ready')`, [id]);
+    if (open.n) throw conflict('This station has kitchen tickets that are not finished yet.');
+    const left = await db.one('SELECT count(*)::int AS n FROM stations WHERE hotel_id = $1 AND id <> $2', [req.hotelId, id]);
+    if (!left.n) throw badRequest('Keep at least one kitchen station');
+    await db.query('UPDATE kots SET station_id = NULL WHERE station_id = $1', [id]);
+    await db.query('UPDATE order_items SET station_id = NULL WHERE station_id = $1', [id]);
+    await db.query('DELETE FROM stations WHERE id = $1', [id]);
+    await audit(req, 'menu.station_deleted', 'station', id, { name: st.name }, db);
+    return { ok: true };
+  });
+  res.json(out);
 });
 
 // Quick availability toggle for the kitchen / restaurant (86 an item)

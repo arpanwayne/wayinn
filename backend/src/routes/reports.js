@@ -63,6 +63,8 @@ async function dashboardData(req) {
            FROM folio_lines WHERE hotel_id = $1 AND business_date = $2 AND voided_at IS NULL AND ${EARNED}`, [h, today]),
     one(`SELECT COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('room','extra_person')),0) AS room,
                 COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('food','room_service')),0) AS food,
+                COALESCE(SUM(amount_paise) FILTER (WHERE category IN ('service','extra')),0) AS other,
+                COALESCE(SUM(amount_paise) FILTER (WHERE category = 'discount'),0) AS discount,
                 COALESCE(SUM(amount_paise),0) AS total
            FROM folio_lines WHERE hotel_id = $1 AND business_date BETWEEN $2 AND $3 AND voided_at IS NULL AND ${EARNED}`, [h, monthStart, today]),
     many(`SELECT method, SUM(CASE WHEN kind = 'refund' THEN -amount_paise ELSE amount_paise END) AS amount_paise

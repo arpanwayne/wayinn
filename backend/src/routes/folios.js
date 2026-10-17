@@ -49,7 +49,11 @@ r.get('/folios', requirePerm('folio.view'), async (req, res) => {
        LEFT JOIN stays s ON s.id = f.stay_id LEFT JOIN rooms r ON r.id = s.room_id
       WHERE f.hotel_id = $1 AND ($2::text IS NULL OR f.status = $2)
       ORDER BY f.id DESC LIMIT 300`, [req.hotelId, req.query.status || null]);
-  res.json(req.query.outstanding ? rows.filter((x) => x.balance_paise !== 0) : rows);
+  // "Balance pending" is money owed by guests who have stayed (or a restaurant bill). A reservation whose guest
+  // has not checked in yet is not owed money; its bill stays visible under "Open bills".
+  res.json(req.query.outstanding
+    ? rows.filter((x) => x.balance_paise !== 0 && !['tentative', 'reserved'].includes(x.stay_status))
+    : rows);
 });
 
 r.get('/folios/:id', requirePerm('folio.view'), async (req, res) => {

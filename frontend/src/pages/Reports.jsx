@@ -102,7 +102,9 @@ export default function Reports() {
               <SplitBar parts={[['Rooms', d.revenue_today.room, 'bg-white'], ['Food', d.revenue_today.food, 'bg-amber-300'], ['Other', d.revenue_today.other, 'bg-ink-900']]} discount={d.revenue_today.discount} />
               <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
                 <HeroFact label="Collected today" value={rupees0(collToday)} sub={(d.collections_today || []).map((c) => `${label(c.method)} ${rupees0(c.amount_paise)}`).join(', ')} />
-                <HeroFact label="Month to date" value={rupees0(d.revenue_month.total)} sub={`Rooms ${rupees0(d.revenue_month.room)}`} />
+                <HeroFact label="Month to date" value={rupees0(d.revenue_month.total)}
+                  sub={[`Rooms ${rupees0(d.revenue_month.room)}`, `Food ${rupees0(d.revenue_month.food)}`, `Other ${rupees0(d.revenue_month.other)}`,
+                    ...(Number(d.revenue_month.discount) ? [`Discounts −${rupees0(Math.abs(d.revenue_month.discount))}`] : [])].join(' · ')} />
                 <HeroFact label="Unpaid after checkout" value={rupees0(d.outstanding.amount_paise)} sub={`${d.outstanding.folios} bill(s)`} bad={d.outstanding.amount_paise > 0} />
                 <HeroFact label="In-house running bills" value={rupees0(d.in_house_balance.amount_paise)} sub={d.refunds_today.n ? `${d.refunds_today.n} refund(s) today, ${rupees0(d.refunds_today.amount_paise)}` : 'No refunds today'} />
               </div>

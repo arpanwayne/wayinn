@@ -8,6 +8,7 @@ import { audit } from '../lib/audit.js';
 import { roomBoard } from '../lib/rooms.js';
 import { hotelToday } from '../lib/dates.js';
 import { config } from '../config.js';
+import { removeRow } from '../lib/remove.js';
 
 const r = Router();
 r.use(['/room-types', '/rooms'], requireStaff);
@@ -54,6 +55,17 @@ r.put('/room-types/:id', requirePerm('rooms.manage'), async (req, res) => {
   await audit(req, rateChanged ? 'room_type.rate_changed' : 'room_type.updated', 'room_type', id,
     { changed: keys, ...(rateChanged ? { from: before.base_rate_paise, to: b.base_rate_paise } : {}) });
   res.json(row);
+});
+
+// Delete a room type only if nothing uses it (no rooms, no bookings). Otherwise switch it off.
+r.delete('/room-types/:id', requirePerm('rooms.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const { n } = (await one('SELECT count(*)::int AS n FROM rooms WHERE room_type_id = $1 AND hotel_id = $2', [id, req.hotelId])) || {};
+  if (n) throw conflict(`${n} room(s) still use this room type. Move or delete those rooms first.`);
+  const row = await removeRow('DELETE FROM room_types WHERE id = $1 AND hotel_id = $2 RETURNING id, name', [id, req.hotelId],
+    'This room type has bookings on record, so it cannot be deleted.');
+  await audit(req, 'room_type.deleted', 'room_type', id, { name: row.name });
+  res.json({ ok: true });
 });
 
 // ---------- Rooms ----------
@@ -116,12 +128,26 @@ r.put('/rooms/:id', requirePerm('rooms.manage'), async (req, res) => {
   const b = parse(roomSchema.partial(), req.body);
   const keys = Object.keys(b);
   if (!keys.length) throw badRequest('Nothing to update');
+  if (b.room_type_id !== undefined && !(await one('SELECT id FROM room_types WHERE id = $1 AND hotel_id = $2', [b.room_type_id, req.hotelId]))) throw badRequest('Unknown room type');
+  if (b.active === true) {
+    const cur = await one('SELECT active FROM rooms WHERE id = $1 AND hotel_id = $2', [id, req.hotelId]);
+    if (cur && !cur.active) await enforceRoomLimit(req);
+  }
   const row = await one(
     `UPDATE rooms SET ${keys.map((k, i) => `${k} = $${i + 1}`).join(', ')}
       WHERE id = $${keys.length + 1} AND hotel_id = $${keys.length + 2} RETURNING *`, [...keys.map((k) => b[k]), id, req.hotelId]);
   if (!row) throw notFound();
   await audit(req, 'room.updated', 'room', id, { changed: keys });
   res.json(row);
+});
+
+// Delete a room only if it was never used (no stays, orders, tasks…). Used rooms are disabled instead.
+r.delete('/rooms/:id', requirePerm('rooms.manage'), async (req, res) => {
+  const id = idParam(req.params.id);
+  const row = await removeRow('DELETE FROM rooms WHERE id = $1 AND hotel_id = $2 RETURNING id, number', [id, req.hotelId],
+    'This room has bookings, orders or tasks on record, so it cannot be deleted. Disable it instead.');
+  await audit(req, 'room.deleted', 'room', id, { number: row.number });
+  res.json({ ok: true });
 });
 
 const HK_FLOW = ['dirty', 'cleaning', 'inspected', 'ready', 'out_of_order'];
