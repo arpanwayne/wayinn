@@ -473,3 +473,58 @@ test('plans list says how many hotels use each plan', async () => {
   const used = (await pool.query('SELECT plan_id, count(*)::int AS n FROM hotels WHERE plan_id IS NOT NULL GROUP BY plan_id')).rows;
   for (const pl of plans) assert.equal(pl.hotel_count, used.find((u) => Number(u.plan_id) === Number(pl.id))?.n || 0);
 });
+
+test('cancel / no-show before check-in: undelivered charges are voided, only the fee counts', async () => {
+  const rooms = (await call('GET', '/api/rooms', null, tok.owner)).data;
+  const r = rooms.find((x) => x.number === '102');
+  const dash = async () => (await call('GET', '/api/reports/dashboard', null, tok.owner)).data;
+  const book = async (name, from) => {
+    const res = await call('POST', '/api/bookings', {
+      guest: { full_name: name, phone: `97${Date.now() % 100000000}` },
+      stays: [{ room_type_id: r.room_type_id, check_in_date: from, check_out_date: addDays(from, 1) }],
+    }, tok.frontdesk);
+    assert.equal(res.status, 201, JSON.stringify(res.data));
+    const st = res.data.stays[0];
+    for (const [d, p] of [['Laundry', 20000], ['Food', 100000]]) {
+      const c = await call('POST', `/api/folios/${st.folio_id}/charges`, { description: d, unit_price_paise: p }, tok.frontdesk);
+      assert.equal(c.status, 201, JSON.stringify(c.data));
+    }
+    return res.data;
+  };
+  const liveLines = async (folioId) => (await call('GET', `/api/folios/${folioId}`, null, tok.owner)).data.lines.filter((l) => !l.voided_at);
+
+  // 1) Whole booking cancelled, with a cancellation fee
+  let before = await dash();
+  const b1 = await book('Cancel Charges', addDays(today, 2));
+  let res = await call('POST', `/api/bookings/${b1.id}/cancel`, { reason: 'guest called', cancellation_fee_paise: 50000 }, tok.owner);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  let lines = await liveLines(b1.stays[0].folio_id);
+  assert.deepEqual(lines.map((l) => l.description), ['Cancellation charge'], 'laundry and food are voided, the fee stays');
+  let after = await dash();
+  assert.equal(after.revenue_month.other - before.revenue_month.other, 50000, 'only the fee is revenue');
+  assert.equal(after.revenue_month.food, before.revenue_month.food);
+  assert.equal(after.outstanding.folios - before.outstanding.folios, 1);
+  assert.equal(after.outstanding.amount_paise - before.outstanding.amount_paise, 50000 + Math.round(50000 * 0.18));
+
+  // 2) Single room cancelled, no fee: nothing left owed or earned
+  before = after;
+  const b2 = await book('Cancel Room', addDays(today, 3));
+  res = await call('POST', `/api/stays/${b2.stays[0].id}/cancel`, { reason: 'changed plans' }, tok.owner);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal((await liveLines(b2.stays[0].folio_id)).length, 0);
+  after = await dash();
+  assert.equal(after.revenue_month.total, before.revenue_month.total);
+  assert.equal(after.outstanding.amount_paise, before.outstanding.amount_paise);
+
+  // 3) No-show with first night charged: only the no-show charge remains
+  before = after;
+  const b3 = await book('No Show Charges', today);
+  res = await call('POST', `/api/stays/${b3.stays[0].id}/no-show`, { charge_first_night: true }, tok.owner);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  lines = await liveLines(b3.stays[0].folio_id);
+  assert.deepEqual(lines.map((l) => l.description), ['No-show charge']);
+  after = await dash();
+  assert.equal(after.revenue_month.food, before.revenue_month.food, 'food that was never served is not revenue');
+  const audit = (await pool.query(`SELECT data FROM audit_logs WHERE action = 'stay.no_show' AND entity_id = $1`, [b3.stays[0].id])).rows[0].data;
+  assert.equal(audit.voided_charges.lines, 2);
+});

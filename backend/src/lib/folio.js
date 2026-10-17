@@ -82,3 +82,22 @@ export function taxBreakup(lines, interState = false) {
     ? { ...r, igst_paise: r.tax_paise }
     : { ...r, cgst_paise: Math.floor(r.tax_paise / 2), sgst_paise: r.tax_paise - Math.floor(r.tax_paise / 2) });
 }
+
+// Fee lines that a cancellation or no-show is allowed to leave on the bill.
+export const FEE_SOURCES = ['cancellation_fee', 'no_show_fee'];
+
+/**
+ * A guest who never checked in never received anything that was pre-posted on the bill (laundry, food,
+ * pickup…), so when the stay is cancelled or marked no-show those lines are voided, with a reason. Only a
+ * cancellation / no-show fee (added after this) stays. Payments are untouched: an advance becomes credit to refund.
+ * Returns { lines, amount_paise } voided. Closed (invoiced) bills are never changed.
+ */
+export async function voidUndeliveredCharges(db, stayId, userId, reason) {
+  const rows = await db.many(
+    `UPDATE folio_lines l SET voided_at = now(), voided_by = $2, void_reason = $3
+       FROM folios f JOIN stays s ON s.id = f.stay_id
+      WHERE f.stay_id = $1 AND l.folio_id = f.id AND f.status = 'open' AND s.checked_in_at IS NULL
+        AND l.voided_at IS NULL AND COALESCE(l.source_type, '') <> ALL($4)
+      RETURNING l.amount_paise`, [stayId, userId, reason, FEE_SOURCES]);
+  return { lines: rows.length, amount_paise: rows.reduce((a, x) => a + Number(x.amount_paise), 0) };
+}

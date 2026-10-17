@@ -19,3 +19,5 @@ export const todayStr = () => new Date().toLocaleDateString('en-CA');
 export const addDays = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 export const nights = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
 export const label = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+/** "1 room", "2 rooms": count + the right word. */
+export const plural = (n, one, many = `${one}s`) => `${n} ${Number(n) === 1 ? one : many}`;

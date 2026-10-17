@@ -20,9 +20,9 @@ function KeyRack({ counts: c, rooms }) {
   const pct = sellable ? Math.round((c.occupied / sellable) * 100) : 0;
   const floors = [...new Set(rooms.map((r) => r.floor || ''))];
   const facts = [
-    [c.arrivals_pending, 'arrivals left', c.unallocated_arrivals ? `${c.unallocated_arrivals} without a room` : null],
-    [c.departures_pending, 'departures left', null],
-    [c.dirty, 'rooms to clean', null],
+    [c.arrivals_pending, `${c.arrivals_pending === 1 ? 'arrival' : 'arrivals'} left`, c.unallocated_arrivals ? `${c.unallocated_arrivals} without a room` : null],
+    [c.departures_pending, `${c.departures_pending === 1 ? 'departure' : 'departures'} left`, null],
+    [c.dirty, `${c.dirty === 1 ? 'room' : 'rooms'} to clean`, null],
   ];
   return (
     <div className="hero">
@@ -30,11 +30,11 @@ function KeyRack({ counts: c, rooms }) {
         <div className="flex flex-col justify-between gap-6">
           <div>
             <div className="num text-6xl leading-none sm:text-7xl">{c.occupied}<span className="text-white/45">/{sellable}</span></div>
-            <div className="mt-2 text-night-100">rooms occupied tonight · {pct}% full · {c.vacant} vacant</div>
+            <div className="mt-2 text-night-100">{c.occupied === 1 ? 'room' : 'rooms'} occupied tonight · {pct}% full · {c.vacant} vacant</div>
           </div>
           <div className="flex flex-wrap gap-x-8 gap-y-3">
-            {facts.map(([n, l, warn]) => (
-              <div key={l}>
+            {facts.map(([n, l, warn], i) => (
+              <div key={i}>
                 <div className={`num text-2xl ${n ? 'text-white' : 'text-white/45'}`}>{n}</div>
                 <div className="text-sm text-night-100">{l}</div>
                 {warn && <div className="text-xs font-semibold text-amber-200">{warn}</div>}

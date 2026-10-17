@@ -70,6 +70,10 @@ export default function Staff() {
                   </Field>}
               {form.id && form.id !== user.id && <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Account active</label>}
             </div>
+            {!form.id && <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Only the people who run the software get a login: <b>owner</b>, <b>front desk</b> and <b>kitchen</b>. Housekeeping, maintenance and
+              service staff do not need one; front desk assigns their work. A front desk login can take bookings, cancel and record payments.
+            </div>}
             <div>
               <div className="label">Permissions (role defaults pre-selected; changes are per person)</div>
               <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">

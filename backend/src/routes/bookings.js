@@ -7,7 +7,7 @@ import { notFound, badRequest, conflict } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { nextBookingRef } from '../lib/sequences.js';
 import { hotelToday, addDays, DATE_RE, nightsBetween } from '../lib/dates.js';
-import { postRoomNights, folioTotals, loadFolio } from '../lib/folio.js';
+import { postRoomNights, folioTotals, loadFolio, voidUndeliveredCharges } from '../lib/folio.js';
 import { guestSchema, createGuest } from './guests.js';
 import { issueInvoice } from './folios.js';
 import { queueNotification } from '../lib/notify.js';
@@ -287,19 +287,24 @@ r.post('/bookings/:id/cancel', requirePerm('bookings.cancel'), async (req, res) 
     if (bk.status === 'cancelled') throw badRequest('Booking is already cancelled');
     const live = await db.one(`SELECT count(*)::int AS n FROM stays WHERE booking_id = $1 AND status IN ('checked_in','checked_out')`, [id]);
     if (live.n) throw conflict('Booking has stays already checked in; check out or cancel individual reserved rooms instead');
-    await db.query(`UPDATE stays SET status = 'cancelled' WHERE booking_id = $1 AND status IN ('tentative','reserved')`, [id]);
+    const cancelled = await db.many(`UPDATE stays SET status = 'cancelled' WHERE booking_id = $1 AND status IN ('tentative','reserved') RETURNING id`, [id]);
     await db.query(`UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = $2 WHERE id = $1`, [id, b.reason]);
+    const voided = { lines: 0, amount_paise: 0 };
+    for (const st of cancelled) {
+      const v = await voidUndeliveredCharges(db, st.id, req.user.id, 'Booking cancelled before check-in');
+      voided.lines += v.lines; voided.amount_paise += v.amount_paise;
+    }
     if (b.cancellation_fee_paise > 0) {
       const f = await db.one(`SELECT f.id FROM folios f JOIN stays s ON s.id = f.stay_id WHERE s.booking_id = $1 ORDER BY f.id LIMIT 1`, [id]);
       const ts = taxSettings(req.hotel);
       await db.query(
         `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, unit_price_paise, amount_paise, tax_rate, tax_paise,
                                   business_date, source_type, created_by)
-         VALUES ($1,$2,'service','Cancellation charge',$3,$4,$4,$5,$6,$7,'manual',$8)`,
+         VALUES ($1,$2,'service','Cancellation charge',$3,$4,$4,$5,$6,$7,'cancellation_fee',$8)`,
         [req.hotelId, f.id, ts.service_sac, b.cancellation_fee_paise, ts.service_rate, taxOn(b.cancellation_fee_paise, ts.service_rate),
           hotelToday(req.hotel.timezone), req.user.id]);
     }
-    await audit(req, 'booking.cancelled', 'booking', id, b, db);
+    await audit(req, 'booking.cancelled', 'booking', id, { ...b, voided_charges: voided }, db);
   });
   res.json(await loadBooking(req.hotelId, id));
 });
@@ -488,11 +493,15 @@ r.post('/stays/:id/checkout', requirePerm('bookings.checkout'), async (req, res)
 r.post('/stays/:id/cancel', requirePerm('bookings.cancel'), async (req, res) => {
   const id = idParam(req.params.id);
   const b = parse(z.object({ reason: z.string().min(2) }), req.body);
-  const s = await one(`UPDATE stays SET status = 'cancelled' WHERE id = $1 AND hotel_id = $2 AND status IN ('tentative','reserved') RETURNING *`, [id, req.hotelId]);
-  if (!s) throw badRequest('Only reserved stays can be cancelled');
-  const remaining = await one(`SELECT count(*)::int AS n FROM stays WHERE booking_id = $1 AND status <> 'cancelled'`, [s.booking_id]);
-  if (!remaining.n) await one(`UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = $2 WHERE id = $1 RETURNING id`, [s.booking_id, b.reason]);
-  await audit(req, 'stay.cancelled', 'stay', id, { booking_id: s.booking_id, reason: b.reason });
+  const s = await tx(async (db) => {
+    const st = await db.one(`UPDATE stays SET status = 'cancelled' WHERE id = $1 AND hotel_id = $2 AND status IN ('tentative','reserved') RETURNING *`, [id, req.hotelId]);
+    if (!st) throw badRequest('Only reserved stays can be cancelled');
+    const voided = await voidUndeliveredCharges(db, id, req.user.id, 'Booking cancelled before check-in');
+    const remaining = await db.one(`SELECT count(*)::int AS n FROM stays WHERE booking_id = $1 AND status <> 'cancelled'`, [st.booking_id]);
+    if (!remaining.n) await db.query(`UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = $2 WHERE id = $1`, [st.booking_id, b.reason]);
+    await audit(req, 'stay.cancelled', 'stay', id, { booking_id: st.booking_id, reason: b.reason, voided_charges: voided }, db);
+    return st;
+  });
   res.json(s);
 });
 
@@ -505,6 +514,7 @@ r.post('/stays/:id/no-show', requirePerm('bookings.cancel'), async (req, res) =>
     if (!st || st.status !== 'reserved') throw badRequest('Only reserved stays can be marked no-show');
     if (st.check_in_date > today) throw badRequest('Arrival date has not come yet');
     await db.query(`UPDATE stays SET status = 'no_show' WHERE id = $1`, [id]);
+    const voided = await voidUndeliveredCharges(db, id, req.user.id, 'Guest did not arrive (no-show)');
     if (b.charge_first_night) {
       // A forfeited first night is taxed like the room tariff it replaces.
       const ts = taxSettings(req.hotel);
@@ -513,10 +523,10 @@ r.post('/stays/:id/no-show', requirePerm('bookings.cancel'), async (req, res) =>
       await db.query(
         `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, unit_price_paise, amount_paise, tax_rate, tax_paise,
                                   business_date, source_type, created_by)
-         VALUES ($1,$2,'service','No-show charge',$3,$4,$4,$5,$6,$7,'manual',$8)`,
+         VALUES ($1,$2,'service','No-show charge',$3,$4,$4,$5,$6,$7,'no_show_fee',$8)`,
         [req.hotelId, st.folio_id, ts.room_sac, tariff, rate, taxOn(tariff, rate), today, req.user.id]);
     }
-    await audit(req, 'stay.no_show', 'stay', id, { booking_id: st.booking_id, charged: b.charge_first_night }, db);
+    await audit(req, 'stay.no_show', 'stay', id, { booking_id: st.booking_id, charged: b.charge_first_night, voided_charges: voided }, db);
     return st;
   });
   res.json({ ...s, status: 'no_show' });

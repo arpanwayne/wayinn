@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useApi } from '../lib/hooks.js';
 import { api, downloadCsv } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
-import { rupees0, rupees, fmtDate, fmtDateTime, label, todayStr, addDays } from '../lib/format.js';
+import { rupees0, rupees, fmtDate, fmtDateTime, label, todayStr, addDays, plural } from '../lib/format.js';
 import { PageHeader, Stat, Loading, Tabs, Empty, Badge, useAction } from '../components/ui.jsx';
 
 function Ring({ pct, label: l }) {
@@ -94,7 +94,7 @@ export default function Reports() {
         }, 'Night audit complete — room charges posted')}>Run night audit</button>} />
       <div className="hero">
         <div className="relative z-10 grid gap-8 p-6 sm:p-8 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center">
-          <Ring pct={d.rooms.occupancy_pct} label={`${d.rooms.occupied} of ${d.rooms.total - d.rooms.out_of_order} rooms`} />
+          <Ring pct={d.rooms.occupancy_pct} label={`${d.rooms.occupied} of ${plural(d.rooms.total - d.rooms.out_of_order, 'room')}`} />
           {fin ? (
             <div>
               <div className="text-night-100">Revenue today</div>
@@ -105,11 +105,11 @@ export default function Reports() {
                 <HeroFact label="Month to date" value={rupees0(d.revenue_month.total)}
                   sub={[`Rooms ${rupees0(d.revenue_month.room)}`, `Food ${rupees0(d.revenue_month.food)}`, `Other ${rupees0(d.revenue_month.other)}`,
                     ...(Number(d.revenue_month.discount) ? [`Discounts −${rupees0(Math.abs(d.revenue_month.discount))}`] : [])].join(' · ')} />
-                <HeroFact label="Unpaid bills" value={rupees0(d.outstanding.amount_paise)} sub={`${d.outstanding.folios} bill(s) · after checkout, no-show or cancellation`} bad={d.outstanding.amount_paise > 0} />
+                <HeroFact label="Unpaid bills" value={rupees0(d.outstanding.amount_paise)} sub={`${plural(d.outstanding.folios, 'bill')} · after checkout, no-show or cancellation`} bad={d.outstanding.amount_paise > 0} />
                 <HeroFact label="In-house running bills" value={rupees0(d.in_house_balance.amount_paise)} sub={d.refunds_today.n ? `${d.refunds_today.n} refund(s) today, ${rupees0(d.refunds_today.amount_paise)}` : 'No refunds today'} />
               </div>
             </div>
-          ) : <div className="text-night-100">{d.rooms.available} rooms available, {d.rooms.out_of_order} out of order</div>}
+          ) : <div className="text-night-100">{plural(d.rooms.available, 'room')} available, {d.rooms.out_of_order} out of order</div>}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">

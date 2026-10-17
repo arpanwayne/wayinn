@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
-import { rupees0, toPaise } from '../lib/format.js';
+import { rupees0, toPaise, plural } from '../lib/format.js';
 import { PageHeader, Loading, Modal, Field, Tabs, Badge, PromptDialog, DeleteDialog, useAction } from '../components/ui.jsx';
 
 function HotelProfile() {
@@ -96,7 +96,7 @@ function RoomSetup() {
           <button className="btn-primary btn-sm" onClick={() => setRt({ name: '', base_occupancy: 2, max_occupancy: 3, rate: '', extra: '', amenities: '' })}>+ Room type</button></div>
         <table className="table"><tbody>{types.data.map((t) => (
           <tr key={t.id}><td className="font-semibold">{t.name}<div className="text-xs font-normal text-ink-500">{t.amenities.join(', ')}</div></td>
-            <td>{t.room_count} rooms</td><td>{t.base_occupancy}–{t.max_occupancy} guests</td><td className="tabular-nums">{rupees0(t.base_rate_paise)}<span className="text-xs text-ink-500"> +{rupees0(t.extra_person_rate_paise)}/extra</span></td>
+            <td>{plural(t.room_count, 'room')}</td><td>{t.base_occupancy}–{t.max_occupancy} guests</td><td className="tabular-nums">{rupees0(t.base_rate_paise)}<span className="text-xs text-ink-500"> +{rupees0(t.extra_person_rate_paise)}/extra</span></td>
             <td className="text-right"><button className="btn-secondary btn-sm" onClick={() => setRt({ ...t, rate: t.base_rate_paise / 100, extra: t.extra_person_rate_paise / 100, amenities: t.amenities.join(', ') })}>Edit</button>
               <button className="btn-ghost btn-sm" onClick={() => setBulk({ room_type_id: t.id, from: '', to: '', floor: '' })}>+ Rooms</button></td></tr>
         ))}</tbody></table>
@@ -200,7 +200,7 @@ function MenuSetup() {
               <div className="label">{title}</div>
               <ul className="divide-y divide-ink-100 rounded-xl border border-ink-200">{list.map((x) => (
                 <li key={x.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
-                  <span>{x.name} <span className="text-xs text-ink-400">{data.items.filter((i) => (kind === 'category' ? i.category_id : i.station_id) === x.id).length} items</span></span>
+                  <span>{x.name} <span className="text-xs text-ink-400">{plural(data.items.filter((i) => (kind === 'category' ? i.category_id : i.station_id) === x.id).length, 'item')}</span></span>
                   <span className="whitespace-nowrap">
                     <button className="btn-ghost btn-sm" onClick={() => setRenaming({ kind, id: x.id, name: x.name })}>Rename</button>
                     <button className="btn-ghost btn-sm text-red-700" onClick={() => setDel({ kind, id: x.id, name: x.name })}>Delete</button>
