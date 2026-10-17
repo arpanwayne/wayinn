@@ -8,7 +8,6 @@ import { notFound, badRequest, forbidden } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { roomBoard } from '../lib/rooms.js';
 import { hotelToday } from '../lib/dates.js';
-import { TASK_ROLES } from '../lib/permissions.js';
 
 const r = Router();
 r.use(['/housekeeping', '/maintenance', '/requests', '/lost-found'], requireStaff);
@@ -29,7 +28,7 @@ r.get('/housekeeping/board', requirePerm('hk.view'), async (req, res) => {
       ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, t.created_at`,
     can(req, 'hk.manage') ? [req.hotelId] : [req.hotelId, req.user.id]);
   const staff = can(req, 'hk.manage')
-    ? await many(`SELECT id, name, role FROM users WHERE hotel_id = $1 AND active AND role = ANY($2) ORDER BY name`, [req.hotelId, TASK_ROLES])
+    ? await many(`SELECT id, name, role FROM users WHERE hotel_id = $1 AND active AND role IN ('front_desk','owner') ORDER BY name`, [req.hotelId])
     : [];
   // Rooms not ready for an arrival today
   const notReady = rooms.filter((x) => x.arriving_stay_id && !['ready', 'inspected'].includes(x.hk_status));
