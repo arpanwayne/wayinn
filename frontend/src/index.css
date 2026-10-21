@@ -1,46 +1,246 @@
-@import '@fontsource-variable/figtree';
-@import '@fontsource-variable/bricolage-grotesque';
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import '@fontsource-variable/figtree' layer(base);
+@import '@fontsource-variable/bricolage-grotesque' layer(base);
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Figtree Variable', system-ui, sans-serif;
+  --font-display:
+    'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, sans-serif;
+
+  --color-ink-50: #f7f7f8;
+  --color-ink-100: #ececee;
+  --color-ink-200: #dcdce0;
+  --color-ink-300: #b4b4bb;
+  --color-ink-400: #85858f;
+  --color-ink-500: #62626c;
+  --color-ink-600: #47474f;
+  --color-ink-700: #33333a;
+  --color-ink-800: #222227;
+  --color-ink-900: #141417;
+
+  --color-brand-50: #e8f9f2;
+  --color-brand-100: #c8f0e0;
+  --color-brand-200: #96e0c4;
+  --color-brand-300: #5acaa4;
+  --color-brand-400: #2ab088;
+  --color-brand-500: #0f9471;
+  --color-brand-600: #0b7a5d;
+  --color-brand-700: #0a654e;
+  --color-brand-800: #0b4f3f;
+  --color-brand-900: #0a4135;
+
+  --color-night-50: #fbf1f3;
+  --color-night-100: #f6e1e5;
+  --color-night-200: #eecbd2;
+  --color-night-300: #e0a5b0;
+  --color-night-400: #cf7d8c;
+  --color-night-600: #a8233a;
+  --color-night-700: #741425;
+  --color-night-800: #821829;
+  --color-night-900: #8e1b2f;
+  --color-night-950: #4f0d19;
+
+  --color-red-50: #fdf2f3;
+  --color-red-100: #fbe2e4;
+  --color-red-200: #f6c5c9;
+  --color-red-300: #ee9aa1;
+  --color-red-400: #e0606b;
+  --color-red-500: #cf3847;
+  --color-red-600: #bb2233;
+  --color-red-700: #9c1b29;
+  --color-red-800: #7d1722;
+
+  --color-amber-50: #fff8eb;
+  --color-amber-100: #feeac6;
+  --color-amber-200: #fdd98f;
+  --color-amber-300: #fbc457;
+  --color-amber-400: #f6a723;
+  --color-amber-500: #e48a0c;
+  --color-amber-600: #c26908;
+
+  /* Line heights as fixed rem values, like Tailwind v3. v4 uses ratios, which children with their own
+     text-[11px] size would inherit and shrink (badges, small labels). */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+
+  --shadow-card:
+    0 1px 2px rgba(20, 20, 23, 0.05), 0 10px 28px -16px rgba(20, 20, 23, 0.16);
+  --shadow-lift:
+    0 2px 4px rgba(20, 20, 23, 0.06), 0 18px 40px -18px rgba(142, 27, 47, 0.45);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+  /* Keep Tailwind v3 looks for things v4's reset changed: placeholder colour and date/time input height. */
+  input::placeholder,
+  textarea::placeholder {
+    opacity: 1;
+    color: #9ca3af;
+  }
+  ::-webkit-date-and-time-value {
+    min-height: revert;
+    text-align: revert;
+  }
+  ::-webkit-datetime-edit {
+    display: revert;
+  }
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: revert;
+  }
+  ::-webkit-datetime-edit,
+  ::-webkit-datetime-edit-year-field,
+  ::-webkit-datetime-edit-month-field,
+  ::-webkit-datetime-edit-day-field,
+  ::-webkit-datetime-edit-hour-field,
+  ::-webkit-datetime-edit-minute-field,
+  ::-webkit-datetime-edit-second-field,
+  ::-webkit-datetime-edit-millisecond-field,
+  ::-webkit-datetime-edit-meridiem-field {
+    padding-block: revert;
+  }
+  /* Tailwind v4 gives buttons the default cursor; keep the v3 pointer. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@utility card {
+  @apply rounded-2xl border border-ink-100 bg-white shadow-card;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-night-900 text-white shadow-xs hover:bg-night-700;
+}
+
+@utility btn-secondary {
+  @apply btn border border-ink-200 bg-white text-ink-800 hover:border-ink-300 hover:bg-ink-50;
+}
+
+@utility btn-danger {
+  /* destructive actions are black so they never look like the red primary button */
+  @apply btn bg-ink-900 text-white hover:bg-ink-700;
+}
+
+@utility btn-ghost {
+  @apply btn text-ink-600 hover:bg-ink-100;
+}
+
+@utility btn-sm {
+  @apply rounded-lg px-2.5 py-1.5 text-xs;
+}
+
+@utility input {
+  @apply w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-hidden transition focus:border-night-900 focus:ring-4 focus:ring-night-100;
+}
+
+@utility label {
+  @apply mb-1 block text-xs font-semibold text-ink-500;
+}
+
+@utility table {
+  @apply w-full text-sm;
+  & th {
+    @apply border-b border-ink-100 px-4 py-2.5 text-left text-xs font-semibold text-ink-400;
+  }
+  & td {
+    @apply border-b border-ink-50 px-4 py-3 align-top;
+  }
+  & tbody tr:last-child td {
+    @apply border-b-0;
+  }
+}
+
+@utility badge {
+  @apply inline-flex items-center self-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold;
+}
+
+@utility chip {
+  /* Filter chips: category pickers, room status filters */
+  @apply inline-flex shrink-0 items-center rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-ink-700 ring-1 ring-inset ring-ink-200 transition hover:ring-night-300;
+}
+
+@utility chip-on {
+  @apply bg-night-900 text-white ring-night-900 hover:ring-night-900;
+}
+
+@utility link {
+  @apply font-semibold text-night-900 hover:underline;
+}
+
+@utility pick {
+  /* Selectable tile (option pickers, room-type cards) */
+  @apply rounded-xl border border-ink-200 bg-white transition hover:border-night-300;
+}
+
+@utility pick-on {
+  @apply border-night-900 bg-night-50 text-night-900;
+}
+
+@utility hero {
+  /* Dark panel used once per screen for the thing that matters most */
+  @apply relative overflow-hidden rounded-3xl bg-night-900 text-white shadow-lift;
+  &::after {
+    content: '';
+    @apply pointer-events-none absolute -right-24 -top-32 h-80 w-80 rounded-full bg-white/25 blur-3xl;
+  }
+}
+
+@utility num {
+  @apply font-display font-bold tabular-nums tracking-tight;
+}
 
 @layer base {
   body { @apply bg-ink-50 text-ink-900 antialiased; font-feature-settings: 'ss01', 'cv11'; }
-  h1 { @apply font-display text-[1.7rem] font-bold leading-tight tracking-tight; }
+  /* line-height as plain CSS (not leading-tight) so a text-3xl on an h1 still sets its own line height, as in v3 */
+  h1 { @apply font-display text-[1.7rem] font-bold tracking-tight; line-height: 1.25; }
   h2 { @apply font-display text-[1.05rem] font-semibold tracking-tight; }
   :focus-visible { @apply outline-2 outline-offset-2 outline-night-900; }
-  input[type='checkbox'], input[type='radio'] { accent-color: theme('colors.night.900'); @apply h-4 w-4; }
-  ::selection { background: theme('colors.night.100'); }
-}
-@layer components {
-  .card { @apply rounded-2xl border border-ink-100 bg-white shadow-card; }
-  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50; }
-  .btn-primary { @apply btn bg-night-900 text-white shadow-sm hover:bg-night-700; }
-  .btn-secondary { @apply btn border border-ink-200 bg-white text-ink-800 hover:border-ink-300 hover:bg-ink-50; }
-  /* destructive actions are black so they never look like the red primary button */
-  .btn-danger { @apply btn bg-ink-900 text-white hover:bg-ink-700; }
-  .btn-ghost { @apply btn text-ink-600 hover:bg-ink-100; }
-  .btn-sm { @apply rounded-lg px-2.5 py-1.5 text-xs; }
-  .input { @apply w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-night-900 focus:ring-4 focus:ring-night-100; }
-  .label { @apply mb-1 block text-xs font-semibold text-ink-500; }
-  .table { @apply w-full text-sm; }
-  .table th { @apply border-b border-ink-100 px-4 py-2.5 text-left text-xs font-semibold text-ink-400; }
-  .table td { @apply border-b border-ink-50 px-4 py-3 align-top; }
-  .table tbody tr:last-child td { @apply border-b-0; }
-  .badge { @apply inline-flex items-center self-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold; }
-  /* Filter chips: category pickers, room status filters */
-  .chip { @apply inline-flex shrink-0 items-center rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-ink-700 ring-1 ring-inset ring-ink-200 transition hover:ring-night-300; }
-  .chip-on { @apply bg-night-900 text-white ring-night-900 hover:ring-night-900; }
-  .link { @apply font-semibold text-night-900 hover:underline; }
-  /* Selectable tile (option pickers, room-type cards) */
-  .pick { @apply rounded-xl border border-ink-200 bg-white transition hover:border-night-300; }
-  .pick-on { @apply border-night-900 bg-night-50 text-night-900; }
-  /* Dark panel used once per screen for the thing that matters most */
-  .hero { @apply relative overflow-hidden rounded-3xl bg-night-900 text-white shadow-lift; }
-  .hero::after { content: ''; @apply pointer-events-none absolute -right-24 -top-32 h-80 w-80 rounded-full bg-white/25 blur-3xl; }
-  .num { @apply font-display font-bold tabular-nums tracking-tight; }
+  input[type='checkbox'], input[type='radio'] { accent-color: var(--color-night-900); @apply h-4 w-4; }
+  ::selection { background: var(--color-night-100); }
 }
 @media print {
   .no-print { display: none !important; }
   body { background: white; }
+}
+
+/*
+  Tailwind v3 spacing for space-y-*: the gap is a top margin on every visible item after the first.
+  v4 puts it as a bottom margin instead, which (a) leaves no gap after an item hidden with lg:hidden and
+  (b) is overridden by an item's own mb-*, where v3 margins collapsed to the larger one. Both moved
+  things a few pixels, so the v3 rule is kept for the sizes this app uses.
+*/
+@layer utilities {
+  :where([class*='space-y-']) > * { margin-block-end: 0; }
+  .space-y-0\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.125rem; }
+  .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; }
+  .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.375rem; }
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+  .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+  .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.25rem; }
 }
