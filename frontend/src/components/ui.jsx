@@ -14,7 +14,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 no-print">
+      <div className="fixed bottom-4 right-4 z-60 flex flex-col gap-2 no-print">
         {toasts.map((t) => (
           <div key={t.id} className={`max-w-sm rounded-xl px-4 py-3 text-sm font-medium shadow-lift ${t.type === 'error' ? 'bg-red-600 text-white' : 'border-l-4 border-night-900 bg-ink-900 text-white'}`}>
             {t.msg}

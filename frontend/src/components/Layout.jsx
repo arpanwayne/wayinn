@@ -70,7 +70,7 @@ export default function Layout() {
         </div>
       )}
       <div className="min-w-0 flex-1 lg:pl-60">
-        <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-ink-100 bg-white/90 px-4 py-2.5 backdrop-blur lg:hidden">
+        <header className="no-print sticky top-0 z-30 flex items-center gap-3 border-b border-ink-100 bg-white/90 px-4 py-2.5 backdrop-blur-sm lg:hidden">
           <button className="btn-ghost btn-sm text-lg" onClick={() => setOpen(true)} aria-label="Menu">☰</button>
           <Logo />
         </header>
