@@ -28,7 +28,7 @@ function KotCard({ k, onDelivered, busy }) {
             </li>
           ))}
         </ul>
-        {k.order_notes && <div className="mt-2 rounded bg-amber-50 px-2 py-1 text-sm">{k.order_notes}</div>}
+        {k.order_notes && <div className="mt-2 rounded-sm bg-amber-50 px-2 py-1 text-sm">{k.order_notes}</div>}
       </div>
       <div className="flex items-center gap-2 border-t border-ink-100 p-3">
         <button className="btn-ghost btn-sm" onClick={() => printKot(k.id)}>Print again</button>

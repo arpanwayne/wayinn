@@ -43,7 +43,7 @@ export default function Housekeeping() {
                 <div><div className="num text-xl">{t.room_number}</div><div className="text-sm">{label(t.task_type)} <span className="text-ink-400">· {label(t.trigger)}</span></div></div>
                 <div className="flex flex-col items-end gap-1"><Badge status={t.priority} /><Badge status={t.status} /></div>
               </div>
-              {t.notes && <div className="mt-2 rounded bg-ink-50 px-2 py-1 text-sm">{t.notes}</div>}
+              {t.notes && <div className="mt-2 rounded-sm bg-ink-50 px-2 py-1 text-sm">{t.notes}</div>}
               <div className="mt-2 text-xs text-ink-500">{t.assigned_name ? `Assigned: ${t.assigned_name}` : 'Unassigned'} · {ago(t.created_at)}</div>
               {t.status !== 'done' && t.status !== 'cancelled' && (
                 <div className="mt-3 flex flex-wrap gap-1">
