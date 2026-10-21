@@ -38,8 +38,16 @@ Demo logins (password `Wayinn@123`):
 |---|---|
 | Super admin (`/platform`) | admin@wayinn.app |
 | Owner | owner@demo-hotel.in |
-| Front desk (reception, billing, POS, housekeeping, maintenance) | frontdesk@demo-hotel.in |
+| Front desk (reception, billing, POS, housekeeping, maintenance) | frontdesk@demo-hotel.in (fresh seed). On the live demo server this login is `reception@demo-hotel.in` |
 | Kitchen | kitchen@demo-hotel.in |
+
+Before a client demo, remove leftover test data (test guests/bookings created by e2e runs) from the demo hotel. Take a database backup first, then:
+
+```bash
+cd backend
+npm run cleanup-demo            # dry run: lists what would be removed
+npm run cleanup-demo -- --apply # actually removes it
+```
 
 Tests (end-to-end against a real database, after migrate + seed): `cd backend && npm test`
 
@@ -70,5 +78,7 @@ Set `PUBLIC_APP_URL` to the public frontend URL (used inside room QR codes) and 
 ## Release 1 — what's in / what's next
 
 **In:** PMS (rooms, rates, calendar, walk-ins, reservations, groups, check-in/out, early/late, room moves, cancellations, no-shows, deposits, refunds), guest profiles, folios & GST invoices, split/partial payments, restaurant POS (dine-in/takeaway/room service, variants, add-ons, stations, KOT print, complimentary, discounts), kitchen display, QR guest portal, housekeeping & maintenance & lost-and-found, staff & permissions, shift handover, owner dashboard & CSV reports, alerts & daily summary, direct-booking request page, super-admin (onboarding, plans, limits, support login, data export).
+
+**Not built yet:** the outbox worker that actually sends notifications, Razorpay on the booking page, channel manager, AI enquiry replies, ESC/POS printing (today: browser print dialog), offline mode, CSV import, automatic maintenance ticket at checkout.
 
 **Next (needs third-party decisions):** WhatsApp/SMS/email provider worker, Razorpay deposits on the booking page, OTA/channel manager, AI enquiry replies, CSV import tools, ESC/POS direct printing, offline mode.
