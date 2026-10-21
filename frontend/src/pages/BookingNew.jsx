@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
-import { addDays, todayStr, nights, rupees, toPaise } from '../lib/format.js';
+import { addDays, todayStr, nights, rupees, toPaise, SOURCES } from '../lib/format.js';
 import { PageHeader, Field, useAction, useToast } from '../components/ui.jsx';
 
 const emptyGuest = { full_name: '', phone: '', email: '', id_type: 'Aadhaar', id_number: '', address: '', city: '', company_name: '', company_gstin: '' };
@@ -100,7 +100,7 @@ export default function BookingNew() {
               <Field label="Nights"><div className="input bg-ink-50">{n}</div></Field>
               <Field label="Source">
                 <select className="input" value={source} onChange={(e) => setSource(e.target.value)}>
-                  {[['walk_in', 'Walk-in'], ['phone', 'Phone'], ['direct_online', 'Website'], ['ota', 'OTA'], ['corporate', 'Corporate'], ['staff', 'Staff'], ['other', 'Other']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  {SOURCES.filter(([v]) => v !== 'channel_manager').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </Field>
             </div>

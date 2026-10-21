@@ -4,6 +4,7 @@ import { api, request } from '../lib/api.js';
 import { store, useAuth } from '../lib/auth.jsx';
 import { rupees0, fmtDate, fmtDateTime, label } from '../lib/format.js';
 import { Logo } from '../components/Layout.jsx';
+import HotelKeys from '../components/HotelKeys.jsx';
 import { Badge, Modal, Field, Stat, Tabs, DeleteDialog, useAction, Loading } from '../components/ui.jsx';
 
 const P = { scope: 'platform' };
@@ -184,6 +185,7 @@ export default function Platform() {
             <Field label="Trial ends"><input type="date" className="input" value={detail.edit.trial_ends_at} onChange={(e) => setE({ trial_ends_at: e.target.value })} /></Field>
             <div><span className="label">Link name · GSTIN</span>{detail.slug} · {detail.gstin || '—'}<div className="text-xs text-ink-500">Created {fmtDate(detail.created_at)}</div></div>
           </div>
+          <HotelKeys hotelId={detail.id} />
           <table className="table"><tbody>{detail.users.map((u) => <tr key={u.id}><td>{u.name}<div className="text-xs text-ink-500">{u.email}</div></td><td>{label(u.role)}</td><td>{u.active ? 'Active' : 'Inactive'}</td><td className="text-ink-500">{fmtDateTime(u.last_login_at)}</td></tr>)}</tbody></table>
         </div>}
       </Modal>

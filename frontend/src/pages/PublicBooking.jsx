@@ -4,6 +4,20 @@ import { api } from '../lib/api.js';
 import { rupees0, todayStr, addDays, nights } from '../lib/format.js';
 import { Logo } from '../components/Layout.jsx';
 
+// Razorpay Checkout is loaded only when a guest has to pay.
+function loadRazorpay() {
+  if (window.Razorpay) return Promise.resolve(true);
+  return new Promise((ok) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    sc.onload = () => ok(true);
+    sc.onerror = () => ok(false);
+    document.body.appendChild(sc);
+  });
+}
+
+const DEPOSIT_TEXT = { first_night: 'the first night', full: 'the full stay', percent: (p) => `${p}% of the stay` };
+
 export default function PublicBooking() {
   const { slug } = useParams();
   const [hotel, setHotel] = useState(null);
@@ -15,7 +29,24 @@ export default function PublicBooking() {
   const [form, setForm] = useState({ full_name: '', phone: '', email: '', adults: 2, children: 0, rooms: 1, special_requests: '' });
   const [done, setDone] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [paid, setPaid] = useState(null);
   const opt = { scope: 'none' };
+
+  const pay = async (r) => {
+    setErr('');
+    if (!(await loadRazorpay())) { setErr('Could not open the payment window. Check your internet and try again.'); return; }
+    const p = r.payment;
+    const rz = new window.Razorpay({
+      key: p.key_id, order_id: p.order_id, amount: p.amount_paise, currency: 'INR', name: p.hotel, description: `Advance for booking ${r.ref}`,
+      prefill: p.prefill, theme: { color: '#8e1b2f' },
+      handler: async (resp) => {
+        try { setPaid(await api.post(`/public/hotels/${slug}/payments/verify`, resp, opt)); } catch (ex) { setErr(ex.message); }
+      },
+      modal: { ondismiss: () => setErr('Payment not completed. Your request is saved — you can pay now, or the hotel will contact you.') },
+    });
+    rz.on('payment.failed', (x) => setErr(x?.error?.description || 'Payment failed. Please try again.'));
+    rz.open();
+  };
 
   useEffect(() => { api.get(`/public/hotels/${slug}`, opt).then((h) => { setHotel(h); setFrom(h.today); setTo(addDays(h.today, 1)); }).catch((e) => setErr(e.message)); }, [slug]); // eslint-disable-line
   useEffect(() => {
@@ -30,6 +61,7 @@ export default function PublicBooking() {
       const r = await api.post(`/public/hotels/${slug}/booking-requests`, { ...form, adults: Number(form.adults), children: Number(form.children), rooms: Number(form.rooms),
         room_type_id: sel.id, check_in_date: from, check_out_date: to, email: form.email || null }, opt);
       setDone(r);
+      if (r.payment) pay(r);
     } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
 
@@ -49,8 +81,19 @@ export default function PublicBooking() {
         {done ? (
           <div className="card p-8 text-center">
             <div className="text-4xl">✓</div>
-            <h2 className="mt-2 text-xl">Request received</h2>
-            <p className="mt-1 text-ink-600">Reference <b>{done.ref}</b>. {done.message}</p>
+            <h2 className="mt-2 text-xl">{paid?.confirmed ? "Booking confirmed" : "Request received"}</h2>
+            {paid ? (
+              <p className="mt-1 text-ink-600">Reference <b>{done.ref}</b>. {rupees0(paid.paid_paise)} paid. {paid.message}</p>
+            ) : (
+              <p className="mt-1 text-ink-600">Reference <b>{done.ref}</b>. {done.message}</p>
+            )}
+            {done.payment && !paid && (
+              <div className="mt-4 space-y-2">
+                <button className="btn-primary px-6 py-3" onClick={() => pay(done)}>Pay {rupees0(done.payment.amount_paise)} now</button>
+                <p className="text-xs text-ink-500">Secure payment by Razorpay · UPI, cards, net banking. Stay total about {rupees0(done.payment.total_paise)} incl. GST.</p>
+              </div>
+            )}
+            {err && <div className="mx-auto mt-3 max-w-md rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>}
             {hotel.phone && <p className="mt-3 text-sm text-ink-500">Questions? Call {hotel.phone}</p>}
           </div>
         ) : (
@@ -86,8 +129,10 @@ export default function PublicBooking() {
                 </div>
                 <label className="sm:col-span-2"><span className="label">Special requests</span><textarea className="input" rows={2} value={form.special_requests} onChange={(e) => setForm({ ...form, special_requests: e.target.value })} /></label>
                 {err && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">{err}</div>}
-                <button className="btn-primary py-3 sm:col-span-2" disabled={busy}>Request booking</button>
-                <p className="text-xs text-ink-500 sm:col-span-2">This is a booking request. The hotel will confirm availability and contact you. No payment is taken now.</p>
+                <button className="btn-primary py-3 sm:col-span-2" disabled={busy}>{hotel.online_payment ? 'Continue to payment' : 'Request booking'}</button>
+                <p className="text-xs text-ink-500 sm:col-span-2">{hotel.online_payment
+                  ? `Pay ${typeof DEPOSIT_TEXT[hotel.online_payment.mode] === 'function' ? DEPOSIT_TEXT.percent(hotel.online_payment.percent) : DEPOSIT_TEXT[hotel.online_payment.mode]} online to confirm your booking straight away.${hotel.online_payment.mode === 'full' ? '' : ' The rest is paid at the hotel.'}`
+                  : 'This is a booking request. The hotel will confirm availability and contact you. No payment is taken now.'}</p>
               </form>
             )}
           </>

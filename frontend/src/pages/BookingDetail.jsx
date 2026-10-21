@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
-import { fmtDate, fmtDateTime, rupees, label, toPaise, addDays, todayStr } from '../lib/format.js';
+import { fmtDate, fmtDateTime, rupees, label, sourceLabel, toPaise, addDays, todayStr } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, ReasonDialog, ConfirmDialog, useAction, ErrorBox } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
 
@@ -105,7 +105,7 @@ export default function BookingDetail() {
   const today = todayStr();
   return (
     <div className="space-y-5">
-      <PageHeader title={`Booking ${b.ref}`} subtitle={`${b.guest_name} · ${b.guest_phone || 'no phone'} · ${label(b.source)} · created ${fmtDateTime(b.created_at)}${b.created_by_name ? ` by ${b.created_by_name}` : ''}`}
+      <PageHeader title={`Booking ${b.ref}`} subtitle={`${b.guest_name} · ${b.guest_phone || 'no phone'} · ${sourceLabel(b.source)}${b.external_ref ? ` ${b.external_ref}` : ''} · created ${fmtDateTime(b.created_at)}${b.created_by_name ? ` by ${b.created_by_name}` : ''}`}
         actions={<>
           <Badge status={b.display_status || b.status} />
           {b.status === 'requested' && can('bookings.create') && <button className="btn-primary" onClick={() => run(async () => { await api.post(`/bookings/${id}/confirm`); reload(); }, 'Booking confirmed')}>Confirm booking</button>}

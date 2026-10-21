@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApi } from '../lib/hooks.js';
 import { useAuth } from '../lib/auth.jsx';
-import { fmtDate, label } from '../lib/format.js';
+import { fmtDate, label, sourceLabel } from '../lib/format.js';
 import { PageHeader, Badge, Empty, Loading } from '../components/ui.jsx';
 
 export default function Bookings() {
@@ -32,7 +32,7 @@ export default function Bookings() {
                   <td>{b.guest_name}<div className="text-xs text-ink-500">{b.guest_phone}</div></td>
                   <td className="whitespace-nowrap">{fmtDate(b.check_in_date)} → {fmtDate(b.check_out_date)}</td>
                   <td>{b.rooms || <span className="text-ink-400">{b.room_count} unassigned</span>}</td>
-                  <td className="text-ink-500">{label(b.source)}</td>
+                  <td className="text-ink-500">{sourceLabel(b.source)}</td>
                   <td><Badge status={b.display_status || b.status} />{b.display_status === 'checked_in' && <span className="ml-1 text-xs text-ink-500">In house</span>}</td>
                 </tr>
               ))}
