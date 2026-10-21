@@ -14,6 +14,9 @@ import { availability } from './bookings.js';
 import { nextBookingRef } from '../lib/sequences.js';
 import { hotelToday, DATE_RE, nightsBetween } from '../lib/dates.js';
 import { taxSettings } from '../lib/money.js';
+import { loadIntegrations, razorpayReady } from '../lib/integrations.js';
+import { stayEstimate, depositAmount, createRazorpayOrder, checkoutSignatureOk, webhookSignatureOk, markOnlinePaymentPaid } from '../lib/razorpay.js';
+import { queueNotification } from '../lib/notify.js';
 
 const r = Router();
 const verifyLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
@@ -173,6 +176,13 @@ r.get('/guest/requests', requireGuest, async (req, res) => {
 // ---------------------------------------------------------------
 // Public direct-booking page
 // ---------------------------------------------------------------
+/** The owner's advance-payment setting, only when the hotel's Razorpay keys are in place. */
+async function onlinePaymentSetting(h) {
+  const setting = h.settings?.online_deposit;
+  if (!setting || setting.mode === 'off') return null;
+  return razorpayReady(await loadIntegrations(h.id)) ? setting : null;
+}
+
 async function hotelBySlug(slug) {
   const h = await one(`SELECT * FROM hotels WHERE slug = $1 AND subscription_status IN ('trial','active','past_due')`, [slug]);
   if (!h || h.settings?.online_booking === false) throw notFound('Hotel not found');
@@ -184,8 +194,10 @@ r.get('/public/hotels/:slug', publicLimiter, async (req, res) => {
   const types = await many(
     `SELECT id, name, description, base_occupancy, max_occupancy, base_rate_paise, extra_person_rate_paise, amenities
        FROM room_types WHERE hotel_id = $1 AND active ORDER BY base_rate_paise`, [h.id]);
+  const pay = await onlinePaymentSetting(h);
   res.json({ name: h.name, address: h.address, city: h.city, phone: h.phone, email: h.email, checkin_time: h.checkin_time,
-    checkout_time: h.checkout_time, room_types: types, today: hotelToday(h.timezone) });
+    checkout_time: h.checkout_time, room_types: types, today: hotelToday(h.timezone),
+    online_payment: pay ? { mode: pay.mode, percent: pay.mode === 'percent' ? pay.percent : null } : null });
 });
 
 r.get('/public/hotels/:slug/availability', publicLimiter, async (req, res) => {
@@ -232,7 +244,82 @@ r.post('/public/hotels/:slug/booking-requests', rateLimit({ windowMs: 60 * 60 * 
     await audit({ hotelId: h.id, ip: req.ip }, 'booking.requested_online', 'booking', bk.id, { ref, rooms: b.rooms }, db);
     return bk;
   });
+
+  // Advance payment: a Razorpay order for the amount the owner chose (first night, a percentage or the full stay).
+  const pay = await onlinePaymentSetting(h);
+  if (pay) {
+    const perRoomAdults = Math.max(1, Math.ceil(b.adults / b.rooms));
+    const est = stayEstimate(h, { nightly_rate_paise: rt.base_rate_paise, extra_person_paise: Math.max(0, perRoomAdults - rt.base_occupancy) * rt.extra_person_rate_paise,
+      check_in_date: b.check_in_date, check_out_date: b.check_out_date, rooms: b.rooms });
+    const amount = depositAmount(pay, est);
+    if (amount > 0) {
+      const integ = await loadIntegrations(h.id);
+      try {
+        const order = await createRazorpayOrder(integ, { amount_paise: amount, receipt: booking.ref, notes: { hotel_id: String(h.id), booking_ref: booking.ref } });
+        await one(`INSERT INTO online_payments (hotel_id, booking_id, provider_order_id, amount_paise) VALUES ($1,$2,$3,$4) RETURNING id`,
+          [h.id, booking.id, order.id, amount]);
+        return res.status(201).json({
+          ref: booking.ref, status: 'requested', message: 'Request received. Pay the advance to confirm your booking.',
+          payment: { provider: 'razorpay', key_id: integ.razorpay_key_id, order_id: order.id, amount_paise: amount, total_paise: est.total_paise,
+            hotel: h.name, prefill: { name: b.full_name, contact: b.phone, email: b.email || undefined } },
+        });
+      } catch (e) {
+        // The request is saved either way; the hotel can still confirm it and collect payment at the desk.
+        console.error('razorpay order failed', h.id, e.message);
+      }
+    }
+  }
   res.status(201).json({ ref: booking.ref, status: 'requested', message: 'Request received. The hotel will confirm your booking shortly.' });
 });
+
+// Razorpay Checkout success callback from the booking page.
+r.post('/public/hotels/:slug/payments/verify', rateLimit({ windowMs: 10 * 60 * 1000, limit: 20 }), async (req, res) => {
+  const h = await hotelBySlug(req.params.slug);
+  const b = parse(z.object({ razorpay_order_id: z.string().min(5), razorpay_payment_id: z.string().min(5), razorpay_signature: z.string().min(10) }), req.body);
+  const integ = await loadIntegrations(h.id);
+  if (!razorpayReady(integ) || !checkoutSignatureOk(integ, b.razorpay_order_id, b.razorpay_payment_id, b.razorpay_signature)) {
+    throw badRequest('Payment could not be verified. If money was deducted, the hotel will see it shortly.');
+  }
+  const out = await tx(async (db) => {
+    const op = await db.one('SELECT hotel_id FROM online_payments WHERE provider_order_id = $1', [b.razorpay_order_id]);
+    if (!op || op.hotel_id !== h.id) throw notFound('Payment not found');
+    return markOnlinePaymentPaid(db, b.razorpay_order_id, b.razorpay_payment_id);
+  });
+  await afterPaid(h, out);
+  res.json({ ref: out.booking?.ref || null, paid_paise: out.op.amount_paise, confirmed: !!(out.confirmed || out.already),
+    message: out.confirmed || out.already ? 'Payment received. Your booking is confirmed.' : 'Payment received. The hotel will call you to confirm the room.' });
+});
+
+// Razorpay webhook (set in the hotel's Razorpay dashboard → Webhooks, events: payment.captured, order.paid).
+// Covers guests who pay but close the page before the callback above runs.
+r.post('/webhooks/razorpay/:hotelId', async (req, res) => {
+  const hotelId = Number(req.params.hotelId);
+  if (!Number.isInteger(hotelId)) throw notFound();
+  const integ = await loadIntegrations(hotelId);
+  if (!webhookSignatureOk(integ, req.rawBody || '', req.get('x-razorpay-signature'))) return res.status(400).json({ error: 'Bad signature' });
+  const p = req.body?.payload?.payment?.entity;
+  if (!['payment.captured', 'order.paid'].includes(req.body?.event) || !p?.order_id) return res.json({ ok: true, ignored: true });
+  const out = await tx(async (db) => {
+    const op = await db.one('SELECT hotel_id, amount_paise FROM online_payments WHERE provider_order_id = $1', [p.order_id]);
+    if (!op || op.hotel_id !== hotelId) return { found: false };
+    if (Number(p.amount) !== Number(op.amount_paise)) return { found: true, mismatch: true };
+    return markOnlinePaymentPaid(db, p.order_id, p.id);
+  });
+  if (out.found && !out.already && !out.mismatch) {
+    const h = await one('SELECT * FROM hotels WHERE id = $1', [hotelId]);
+    await afterPaid(h, out);
+  }
+  res.json({ ok: true });
+});
+
+async function afterPaid(h, out) {
+  if (!out.found || out.already) return;
+  const g = await one('SELECT full_name, phone, email FROM guests WHERE id = $1', [out.booking.guest_id]);
+  await queueNotification(h.id, g, 'deposit_received', { amount_paise: out.op.amount_paise, ref: out.booking.ref, hotel: h.name });
+  if (out.confirmed) {
+    const st = await one('SELECT min(check_in_date) AS ci, max(check_out_date) AS co FROM stays WHERE booking_id = $1', [out.booking.id]);
+    await queueNotification(h.id, g, 'booking_confirmation', { ref: out.booking.ref, hotel: h.name, check_in: st.ci, check_out: st.co });
+  }
+}
 
 export default r;

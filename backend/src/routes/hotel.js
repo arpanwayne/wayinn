@@ -7,6 +7,9 @@ import { PERMISSIONS, ROLE_PERMISSIONS } from '../lib/permissions.js';
 import { taxSettings } from '../lib/money.js';
 import { audit } from '../lib/audit.js';
 import { badRequest } from '../lib/errors.js';
+import { loadIntegrations, integrationStatus, randomToken, sha256 } from '../lib/integrations.js';
+import { query } from '../db.js';
+import { config } from '../config.js';
 
 const r = Router();
 r.use('/hotel', requireStaff);
@@ -46,6 +49,14 @@ const settingsSchema = z.object({
     discount_alert_pct: z.number().min(0).max(100).optional(),
     registration_fields: z.array(z.object({ key: z.string(), label: z.string(), required: z.boolean().default(false) })).optional(),
     invoice_footer: z.string().optional(),
+    // Guest messages: which channels the hotel pays for (keys are added by Wayne E Solutions).
+    notifications: z.object({ whatsapp: z.boolean().default(false), sms: z.boolean().default(false), email: z.boolean().default(false) }).optional(),
+    // Staff without a login (housekeeping, maintenance) get alerts on these numbers.
+    staff_alert_phones: z.array(z.string().trim().regex(/^\+?[0-9 -]{8,16}$/, 'Phone numbers only')).max(10).optional(),
+    staff_alert_channel: z.enum(['whatsapp', 'sms']).optional(),
+    checkout_alert: z.boolean().optional(),
+    // Advance payment on the public booking page (Razorpay).
+    online_deposit: z.object({ mode: z.enum(['off', 'first_night', 'percent', 'full']), percent: z.number().int().min(1).max(100).default(25) }).optional(),
   }).partial().optional(),
 });
 
@@ -74,6 +85,53 @@ r.put('/hotel', requirePerm('hotel.settings'), async (req, res) => {
   const updated = await one(`UPDATE hotels SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
   await audit(req, 'hotel.settings_updated', 'hotel', req.hotelId, { changed: Object.keys(body) });
   res.json(updated);
+});
+
+// Which outside services are connected (no keys, only yes/no), and the hotel's channel-manager / iCal links.
+r.get('/hotel/integrations', requirePerm('hotel.settings'), async (req, res) => {
+  const i = await loadIntegrations(req.hotelId);
+  const types = await many('SELECT id, name FROM room_types WHERE hotel_id = $1 AND active ORDER BY base_rate_paise', [req.hotelId]);
+  const apiBase = `${config.publicAppUrl.replace(/\/$/, '')}/api`;
+  res.json({
+    ...integrationStatus(i),
+    channel_api_base: `${apiBase}/channel/v1`,
+    ical_links: i.ical_token ? types.map((t) => ({ room_type: t.name, url: `${apiBase}/channel/ical/${i.ical_token}/${t.id}.ics` })) : [],
+  });
+});
+
+// Channel-manager API key: shown once, only its hash is kept. Making a new one stops the old one.
+r.post('/hotel/channel-key', requirePerm('hotel.settings'), async (req, res) => {
+  const key = `wyn_${req.hotelId}_${randomToken(20)}`;
+  await query(`INSERT INTO hotel_integrations (hotel_id, channel_key_hash, channel_key_hint) VALUES ($1,$2,$3)
+               ON CONFLICT (hotel_id) DO UPDATE SET channel_key_hash = $2, channel_key_hint = $3, updated_at = now()`,
+  [req.hotelId, sha256(key), key.slice(-4)]);
+  await audit(req, 'hotel.channel_key_created', 'hotel', req.hotelId, { hint: key.slice(-4) });
+  res.status(201).json({ key, hint: key.slice(-4) });
+});
+r.delete('/hotel/channel-key', requirePerm('hotel.settings'), async (req, res) => {
+  await query('UPDATE hotel_integrations SET channel_key_hash = NULL, channel_key_hint = NULL WHERE hotel_id = $1', [req.hotelId]);
+  await audit(req, 'hotel.channel_key_removed', 'hotel', req.hotelId, {});
+  res.json({ ok: true });
+});
+
+// Calendar (iCal) links that OTAs such as Airbnb or Booking.com can read to block sold-out dates.
+r.post('/hotel/ical-token', requirePerm('hotel.settings'), async (req, res) => {
+  const token = randomToken(16);
+  await query(`INSERT INTO hotel_integrations (hotel_id, ical_token) VALUES ($1,$2)
+               ON CONFLICT (hotel_id) DO UPDATE SET ical_token = $2, updated_at = now()`, [req.hotelId, token]);
+  await audit(req, 'hotel.ical_link_created', 'hotel', req.hotelId, {});
+  res.status(201).json({ ok: true });
+});
+r.delete('/hotel/ical-token', requirePerm('hotel.settings'), async (req, res) => {
+  await query('UPDATE hotel_integrations SET ical_token = NULL WHERE hotel_id = $1', [req.hotelId]);
+  res.json({ ok: true });
+});
+
+// Recent WhatsApp / SMS / email messages and whether they went out.
+r.get('/hotel/messages', requirePerm('hotel.settings'), async (req, res) => {
+  res.json(await many(
+    `SELECT id, channel, audience, recipient, template, status, error, attempts, created_at, sent_at, payload->>'guest_name' AS guest_name
+       FROM notifications_outbox WHERE hotel_id = $1 ORDER BY id DESC LIMIT 100`, [req.hotelId]));
 });
 
 r.get('/hotel/permissions', (_req, res) => res.json({ permissions: PERMISSIONS, roles: ROLE_PERMISSIONS }));
