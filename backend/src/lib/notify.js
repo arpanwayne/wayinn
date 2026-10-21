@@ -39,6 +39,26 @@ export async function queueStaffAlert(hotelId, template, payload) {
   }
 }
 
+/**
+ * Task alert for one team (housekeeping / maintenance) on the numbers the owner listed for that team in Setup.
+ * A hotel that has not listed team numbers falls back to the general staff alert numbers. Returns how many were queued.
+ */
+export async function queueTeamAlert(hotelId, team, template, payload) {
+  try {
+    const { rows } = await query('SELECT settings FROM hotels WHERE id = $1', [hotelId]);
+    const s = rows[0]?.settings || {};
+    if (s.team_alerts === false) return 0;
+    const contacts = (s.staff_contacts || []).filter((c) => c.team === team);
+    const phones = (contacts.length ? contacts.map((c) => c.phone) : s.staff_alert_phones || []).map(normalizePhone).filter(Boolean);
+    const channel = s.staff_alert_channel === 'sms' ? 'sms' : 'whatsapp';
+    for (const p of [...new Set(phones)]) await insert(hotelId, channel, p, template, payload, 'staff');
+    return phones.length;
+  } catch (e) {
+    console.error('queueTeamAlert failed', e.message);
+    return 0;
+  }
+}
+
 async function hotelChannels(hotelId) {
   const { rows } = await query('SELECT settings FROM hotels WHERE id = $1', [hotelId]);
   return rows[0]?.settings?.notifications || {};

@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { fmtDate, fmtDateTime, rupees, label, sourceLabel, toPaise, addDays, todayStr } from '../lib/format.js';
 import { PageHeader, Badge, Loading, Modal, Field, ReasonDialog, ConfirmDialog, useAction, ErrorBox } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
+import GuestDocuments from '../components/GuestDocuments.jsx';
 
 /** Bill summary for one stay. Before check-in nothing is charged yet, so ₹0 must not read as "settled". */
 function BillCell({ stay, t }) {
@@ -151,6 +152,7 @@ export default function BookingDetail() {
           </tbody>
         </table>
       </div>
+      {can('guests.manage') && b.guest_id && <GuestDocuments guestId={b.guest_id} bookingId={id} />}
       {history.data?.length > 0 && (
         <div className="card p-4">
           <h2 className="mb-2">History</h2>

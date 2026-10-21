@@ -64,6 +64,7 @@ Tests (end-to-end against a real database, after migrate + seed): `cd backend &&
 - **Roles**: three — **Owner** (everything), **Front desk** (reservations, check-in/out, billing, POS, housekeeping, maintenance, guest requests) and **Kitchen** (one screen: incoming tickets and a *Delivered* button). The owner can grant or revoke any of ~38 permissions per person (refunds, voids, rate overrides, discounts are owner-only by default). Give each person their own login so the activity log shows who did what.
 - **Kitchen**: new tickets print automatically. Two ways: **direct** to a USB / serial / Bluetooth thermal printer (Kitchen screen → Printer → Connect; Chrome or Edge, ESC/POS, 58 or 80 mm, no dialog), or **browser print** (start Chrome with `--kiosk-printing` and the thermal printer as default to skip the dialog). On Windows the printer's own driver holds the USB port, so use the serial/Bluetooth option or browser print there. The kitchen cannot cancel: if an order can't be made they tell the front desk, who cancels the order or removes the item, which also takes the charge off the room bill and shows a *cancelled — stop* notice in the kitchen.
 - **Alerts** (advisory, humans decide): overdue housekeeping, rooms not ready for arrivals, stuck/unbilled orders, missing room charges, overstays, unpaid checkouts, unusual discounts, repeated voids/refunds/cancellations.
+- **Guest ID documents on WhatsApp** and **housekeeping / maintenance on WhatsApp**: see "WhatsApp: guest documents and staff replies" below.
 - **Messages (WhatsApp / SMS / email)**: see "Messages, payments and OTAs" below.
 
 ## Deploy (EC2, same pattern as our other products)
@@ -113,8 +114,26 @@ Base: `https://<your domain>/api/channel/v1`, header `x-api-key: wyn_…`. Money
 
 OTA bookings show in Wayinn with the OTA's name as the source and the OTA reference on the booking. A prepaid amount is recorded as an online payment so the desk does not collect it again.
 
+## WhatsApp: guest documents and staff replies
+
+The hotel's own WhatsApp number (the same one used for sending) also *receives*. Meta calls our webhook, `https://<your domain>/api/webhooks/whatsapp/<hotel id>`, for every incoming message. Each delivery is checked against the hotel's Meta **app secret** (`x-hub-signature-256`); unsigned calls are rejected.
+
+**Setup (super admin, `/platform` → hotel → Hotel's own keys):** add the *Webhook verify token* (any secret text) and the *Meta app secret*. Then in the hotel's Meta app → WhatsApp → Configuration: callback URL = the URL shown there, verify token = the same text, subscribe to **messages**. Create the new Utility templates (same style as the table above): `checkin_documents_request`, `hk_task_alert`, `maintenance_alert`.
+
+**Guest ID at check-in.**
+- Front desk clicks **Ask on WhatsApp** (guest profile or booking) → guest gets `checkin_documents_request` and replies with a photo / PDF of Aadhaar, passport, driving licence… (JPG, PNG, WebP or PDF, up to 10 MB).
+- The file is saved in the database (`guest_documents`) and matched to the guest by phone number (last 10 digits; a guest staying now or arriving soon wins). It shows under **ID documents** on the guest profile and booking. The guest gets a thank-you reply.
+- A number we cannot match lands in the **WhatsApp documents to match** box on the Front desk page; staff search the guest and save it on them.
+- The desk can also scan / upload a file directly (**Upload / scan**). Viewing a file, uploading, matching and deleting are all in the activity log; files are never cached and only roles with *guests.manage* can open them.
+
+**Housekeeping and maintenance.** They keep no login; the owner lists each person's WhatsApp number and team in **Setup → Messages & payments → Housekeeping & maintenance on WhatsApp**.
+- New housekeeping task → `hk_task_alert` to the housekeeping numbers: "…Reply DONE 101 when finished". New maintenance request → `maintenance_alert` to the maintenance numbers: "…Reply FIXED 12 when resolved".
+- A reply from a listed number closes the task in the app (room goes to *ready*, or *cleaning* + an inspection task if the hotel requires inspection) and is logged as done on WhatsApp by that person. Numbers that are not listed, or the wrong team, cannot close anything.
+- Checkout alerts keep working as before. A hotel that lists nobody falls back to the general staff alert numbers.
+- Staff who do have a login keep using the Housekeeping / Maintenance screens; both routes update the same tasks, so the front desk board is always current.
+
 ## What's in / what's next
 
-**In:** PMS (rooms, rates, calendar, walk-ins, reservations, groups, check-in/out, early/late, room moves, cancellations, no-shows, deposits, refunds), guest profiles, folios & GST invoices, split/partial payments, restaurant POS (dine-in/takeaway/room service, variants, add-ons, stations, KOT print, complimentary, discounts), kitchen display with direct ESC/POS printing, QR guest portal, housekeeping & maintenance & lost-and-found, checkout alerts to staff phones, staff & permissions, shift handover, owner dashboard & CSV reports, alerts & daily summary, WhatsApp / SMS / email messages, direct-booking page with Razorpay advance, channel-manager API and iCal links for OTAs, super-admin (onboarding, plans, limits, per-hotel keys, support login, data export).
+**In:** PMS (rooms, rates, calendar, walk-ins, reservations, groups, check-in/out, early/late, room moves, cancellations, no-shows, deposits, refunds), guest profiles, folios & GST invoices, split/partial payments, restaurant POS (dine-in/takeaway/room service, variants, add-ons, stations, KOT print, complimentary, discounts), kitchen display with direct ESC/POS printing, QR guest portal, housekeeping & maintenance & lost-and-found, checkout alerts to staff phones, WhatsApp guest-ID capture, WhatsApp task alerts and DONE / FIXED replies for housekeeping and maintenance, staff & permissions, shift handover, owner dashboard & CSV reports, alerts & daily summary, WhatsApp / SMS / email messages, direct-booking page with Razorpay advance, channel-manager API and iCal links for OTAs, super-admin (onboarding, plans, limits, per-hotel keys, support login, data export).
 
 **Not built yet:** AI replies to guest enquiries, CSV import tools, offline mode, network (LAN / Wi-Fi) printers from the kitchen screen, iCal *import* (reading other sites' calendars), automatic refunds through Razorpay. Rates and room counts are not pushed to OTAs: the channel manager reads them from the API.

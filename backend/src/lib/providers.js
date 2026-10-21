@@ -32,6 +32,36 @@ export async function sendWhatsAppHello(integ, to, fetchImpl = fetch) {
   return postWhatsApp(integ, { messaging_product: 'whatsapp', to, type: 'template', template: { name: 'hello_world', language: { code: 'en_US' } } }, fetchImpl);
 }
 
+/** Free-form reply. WhatsApp only allows this within 24 hours of the person's last message to the hotel. */
+export async function sendWhatsAppText(integ, to, text, fetchImpl = fetch) {
+  return postWhatsApp(integ, { messaging_product: 'whatsapp', to, type: 'text', text: { body: String(text).slice(0, 1000) } }, fetchImpl);
+}
+
+export const MAX_DOC_BYTES = 10 * 1024 * 1024;
+
+/** Download a photo / PDF a guest sent. Two calls: media id → temporary URL, then the file itself (both need the token). */
+export async function downloadWhatsAppMedia(integ, mediaId, fetchImpl = fetch) {
+  const auth = { authorization: `Bearer ${integ.whatsapp_token}` };
+  let meta;
+  try {
+    const res = await fetchImpl(`${GRAPH()}/${encodeURIComponent(mediaId)}`, { headers: auth });
+    meta = await readJson(res);
+    if (!res.ok || !meta?.url) throw new ProviderError(`WhatsApp media: ${meta?.error?.message || `HTTP ${res.status}`}`, res.status === 429 || res.status >= 500);
+  } catch (e) {
+    if (e instanceof ProviderError) throw e;
+    throw new ProviderError(`WhatsApp not reachable: ${e.message}`);
+  }
+  if (Number(meta.file_size) > MAX_DOC_BYTES) throw new ProviderError('File is larger than 10 MB', false);
+  let file;
+  try {
+    file = await fetchImpl(meta.url, { headers: auth });
+  } catch (e) { throw new ProviderError(`WhatsApp not reachable: ${e.message}`); }
+  if (!file.ok) throw new ProviderError(`WhatsApp media download: HTTP ${file.status}`, file.status === 429 || file.status >= 500);
+  const data = Buffer.from(await file.arrayBuffer());
+  if (data.length > MAX_DOC_BYTES) throw new ProviderError('File is larger than 10 MB', false);
+  return { data, mime: String(meta.mime_type || file.headers.get('content-type') || '').split(';')[0] };
+}
+
 async function postWhatsApp(integ, body, fetchImpl) {
   let res;
   try {

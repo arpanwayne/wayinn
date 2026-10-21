@@ -25,6 +25,21 @@ export const TEMPLATES = {
     params: (p) => [p.guest_name, rs(p.amount_paise), p.ref, p.hotel],
     text: 'Dear {{1}}, we have received your advance payment of {{2}} for booking {{3}} at {{4}}. Thank you.',
   },
+  checkin_documents_request: {
+    audience: 'guest', subject: (p) => `Your ID for check-in — ${p.hotel}`,
+    params: (p) => [p.guest_name, p.hotel],
+    text: 'Dear {{1}}, welcome to {{2}}. To complete your check-in, please send a clear photo of your ID (Aadhaar, passport, driving licence or voter ID) as a reply on this WhatsApp chat. Thank you.',
+  },
+  hk_task_alert: {
+    audience: 'staff', subject: (p) => `Housekeeping: room ${p.room}`,
+    params: (p) => [p.task, p.room, p.hotel, p.priority, p.note || '-'],
+    text: 'Housekeeping: {{1}} for room {{2}} at {{3}}. Priority: {{4}}. Note: {{5}}. Reply DONE {{2}} when finished.',
+  },
+  maintenance_alert: {
+    audience: 'staff', subject: (p) => `Maintenance: ${p.title}`,
+    params: (p) => [p.title, p.room, p.hotel, p.priority, p.id],
+    text: 'Maintenance: {{1}} in {{2}} at {{3}}. Priority: {{4}}. Reply FIXED {{5}} when resolved.',
+  },
   room_checkout_alert: {
     audience: 'staff', subject: (p) => `Room ${p.room} checked out`,
     params: (p) => [p.room, p.hotel, p.note],

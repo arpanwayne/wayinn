@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { rupees, fmtDate, fmtDateLong, ago } from '../lib/format.js';
 import { PageHeader, Badge, Empty, Loading, ReasonDialog, useAction, useToast } from '../components/ui.jsx';
 import { CheckInDialog, CheckOutDialog } from '../components/stay.jsx';
+import DocumentInbox from '../components/DocumentInbox.jsx';
 
 // The hero: every room as a key on the rack, so the whole house reads at a glance.
 const KEY = {
@@ -119,6 +120,7 @@ export default function FrontDesk() {
           <Link to="/bookings/new" className="btn-secondary">+ Reservation</Link>
         </>} />
       <KeyRack counts={c} rooms={board.data || []} />
+      {can('guests.manage') && <DocumentInbox />}
 
       {alerts.data?.length > 0 && (
         <div className="card divide-y divide-ink-50">

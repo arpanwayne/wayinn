@@ -134,7 +134,7 @@ r.post('/guests/:id/merge', requirePerm('guests.manage'), async (req, res) => {
       await db.query(`UPDATE guests SET notes = notes || E'\n' || $1 WHERE id = $2`, [from.notes, into.id]);
     }
     const moved = {};
-    for (const t of ['bookings', 'stays', 'folios']) {
+    for (const t of ['bookings', 'stays', 'folios', 'guest_documents']) {
       moved[t] = (await db.query(`UPDATE ${t} SET guest_id = $1 WHERE guest_id = $2`, [into.id, id])).rowCount;
     }
     await db.query('DELETE FROM guests WHERE id = $1', [id]);

@@ -8,6 +8,7 @@ import { notFound, badRequest, forbidden, conflict } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
 import { roomBoard } from '../lib/rooms.js';
 import { hotelToday } from '../lib/dates.js';
+import { queueTeamAlert } from '../lib/notify.js';
 
 const r = Router();
 r.use(['/housekeeping', '/maintenance', '/requests', '/lost-found'], requireStaff);
@@ -48,6 +49,9 @@ r.post('/housekeeping/tasks', requirePerm('hk.manage'), async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
     [req.hotelId, b.room_id, b.task_type, b.priority, b.assigned_to ?? null, b.due_at ?? null, b.notes ?? null, req.user.id]);
   await audit(req, 'hk.task_created', 'hk_task', t.id, { room_id: b.room_id, type: b.task_type });
+  const rm = await one('SELECT number FROM rooms WHERE id = $1', [b.room_id]);
+  await queueTeamAlert(req.hotelId, 'housekeeping', 'hk_task_alert',
+    { task: b.task_type.replace(/_/g, ' '), room: rm.number, hotel: req.hotel.name, priority: b.priority, note: b.notes });
   res.status(201).json(t);
 });
 
@@ -155,6 +159,9 @@ r.post('/maintenance', requirePerm('maintenance.manage'), async (req, res) => {
     await audit(req, 'maintenance.created', 'maintenance', row.id, { room_id: b.room_id, title: b.title, ooo: b.mark_out_of_order }, db);
     return row;
   });
+  const rm = m.room_id ? await one('SELECT number FROM rooms WHERE id = $1', [m.room_id]) : null;
+  await queueTeamAlert(req.hotelId, 'maintenance', 'maintenance_alert',
+    { title: m.title, room: rm ? `room ${rm.number}` : 'common area', hotel: req.hotel.name, priority: m.priority, id: m.id });
   res.status(201).json(m);
 });
 

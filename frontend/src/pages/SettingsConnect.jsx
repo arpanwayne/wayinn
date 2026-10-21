@@ -7,6 +7,7 @@ import { Loading, Field, Badge, Modal, Empty, useAction } from '../components/ui
 
 const TEMPLATE_NAMES = {
   booking_confirmation: 'Booking confirmed', checkin_welcome: 'Check-in welcome', deposit_received: 'Advance received', room_checkout_alert: 'Room checked out (staff)',
+  checkin_documents_request: 'Ask guest for ID', hk_task_alert: 'New housekeeping task (staff)', maintenance_alert: 'New maintenance request (staff)',
 };
 
 const CHANNEL_NAMES = { whatsapp: 'WhatsApp', sms: 'SMS', email: 'Email' };
@@ -34,18 +35,22 @@ export function MessagesPayments() {
       phones: (s.staff_alert_phones || []).join('\n'),
       staff_alert_channel: s.staff_alert_channel || 'whatsapp',
       checkout_alert: s.checkout_alert !== false,
+      team_alerts: s.team_alerts !== false,
+      contacts: s.staff_contacts || [],
       deposit_mode: s.online_deposit?.mode || 'off',
       deposit_percent: s.online_deposit?.percent || 25,
     });
   }, [hotel.data]);
   if (!f || !integ.data) return <Loading />;
   const st = integ.data;
+  const setC = (i, patch) => setF({ ...f, contacts: f.contacts.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
   const setN = (k, v) => setF({ ...f, notifications: { ...f.notifications, [k]: v } });
   const save = () => run(async () => {
     const phones = f.phones.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
     await api.put('/hotel', {
       settings: {
         notifications: f.notifications, staff_alert_phones: phones, staff_alert_channel: f.staff_alert_channel, checkout_alert: f.checkout_alert,
+        team_alerts: f.team_alerts, staff_contacts: f.contacts.filter((c) => c.name.trim() && c.phone.trim()).map((c) => ({ name: c.name.trim(), phone: c.phone.trim(), team: c.team })),
         online_deposit: { mode: f.deposit_mode, percent: Number(f.deposit_percent) || 25 },
       },
     });
@@ -57,7 +62,7 @@ export function MessagesPayments() {
         <h2>Connections</h2>
         <p className="mb-3 text-xs text-ink-500">Every hotel uses its own WhatsApp number and its own Razorpay account, so messages come from your name and payments reach your bank. Wayne E Solutions adds the keys for you — send them to your account manager.</p>
         <div className="grid gap-2 sm:grid-cols-4">
-          <Connected on={st.whatsapp}>WhatsApp</Connected><Connected on={st.sms}>SMS</Connected>
+          <Connected on={st.whatsapp}>WhatsApp</Connected><Connected on={st.whatsapp_inbound}>WhatsApp incoming (guest IDs, staff replies)</Connected><Connected on={st.sms}>SMS</Connected>
           <Connected on={st.email}>Email</Connected><Connected on={st.razorpay}>Razorpay</Connected>
         </div>
       </div>
@@ -84,6 +89,25 @@ export function MessagesPayments() {
             <Field label="Send by"><select className="input" value={f.staff_alert_channel} onChange={(e) => setF({ ...f, staff_alert_channel: e.target.value })}>
               <option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select></Field>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.checkout_alert} onChange={(e) => setF({ ...f, checkout_alert: e.target.checked })} /> Alert on every checkout</label>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <h2>Housekeeping & maintenance on WhatsApp</h2>
+        <p className="mb-3 text-xs text-ink-500">Add each person's WhatsApp number and team. A new housekeeping task or maintenance request goes to that team's numbers, and they reply <b>DONE 101</b> (room number) or <b>FIXED 12</b> (request number) to close it — no login needed. Numbers not listed here cannot close anything. If you add nobody, the numbers above are used.</p>
+        <div className="space-y-2">
+          {f.contacts.map((c, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_9rem_auto] gap-2">
+              <input className="input" placeholder="Name" value={c.name} onChange={(e) => setC(i, { name: e.target.value })} />
+              <input className="input" placeholder="WhatsApp number" value={c.phone} onChange={(e) => setC(i, { phone: e.target.value })} />
+              <select className="input" value={c.team} onChange={(e) => setC(i, { team: e.target.value })}><option value="housekeeping">Housekeeping</option><option value="maintenance">Maintenance</option></select>
+              <button className="btn-ghost btn-sm text-red-600" onClick={() => setF({ ...f, contacts: f.contacts.filter((_, j) => j !== i) })}>Remove</button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-4">
+            <button className="btn-secondary btn-sm" disabled={f.contacts.length >= 20} onClick={() => setF({ ...f, contacts: [...f.contacts, { name: '', phone: '', team: 'housekeeping' }] })}>+ Add person</button>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.team_alerts} onChange={(e) => setF({ ...f, team_alerts: e.target.checked })} /> Message the team on every new task</label>
           </div>
         </div>
       </div>
