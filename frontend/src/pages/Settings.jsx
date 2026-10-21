@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { rupees0, toPaise, plural } from '../lib/format.js';
 import { PageHeader, Loading, Modal, Field, Tabs, Badge, PromptDialog, DeleteDialog, useAction } from '../components/ui.jsx';
+import { MessagesPayments, OnlineChannels } from './SettingsConnect.jsx';
 
 function HotelProfile() {
   const { data, reload } = useApi('/hotel');
@@ -308,6 +309,7 @@ export default function Settings() {
     ...(can('hotel.settings') ? [['hotel', 'Hotel & tax']] : []),
     ...(can('rooms.manage') ? [['rooms', 'Rooms & rates'], ['qr', 'QR codes & booking link']] : []),
     ...(can('menu.manage') ? [['menu', 'Menu']] : []),
+    ...(can('hotel.settings') ? [['messages', 'Messages & payments'], ['channels', 'Online channels']] : []),
   ];
   const [tab, setTab] = useState(tabs[0]?.[0]);
   return (
@@ -318,6 +320,8 @@ export default function Settings() {
       {tab === 'rooms' && <RoomSetup />}
       {tab === 'menu' && <MenuSetup />}
       {tab === 'qr' && <QrSheet />}
+      {tab === 'messages' && <MessagesPayments />}
+      {tab === 'channels' && <OnlineChannels />}
     </div>
   );
 }

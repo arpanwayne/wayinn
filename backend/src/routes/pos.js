@@ -10,6 +10,8 @@ import { taxOn, taxSettings } from '../lib/money.js';
 import { hotelToday } from '../lib/dates.js';
 import { nextOrderNo, nextKotNo, nextInvoiceNo } from '../lib/sequences.js';
 
+import { kotEscpos } from '../lib/escpos.js';
+
 const r = Router();
 r.use(['/menu', '/stations', '/orders', '/kitchen', '/kots'], requireStaff);
 
@@ -611,6 +613,13 @@ r.get('/kots/:id/print', requirePerm('kitchen.view', 'pos.order'), async (req, r
   const items = await many(`SELECT * FROM order_items WHERE kot_id = $1 AND NOT cancelled ORDER BY id`, [id]);
   const where = k.order_type === 'room_service' ? `ROOM ${k.room_number}` : k.order_type === 'dine_in' ? `TABLE ${k.table_label || '-'}` : 'TAKEAWAY';
   const time = new Date(k.created_at).toLocaleTimeString('en-IN', { timeZone: req.hotel.timezone, hour: '2-digit', minute: '2-digit' });
+  if (req.query.format === 'escpos') {
+    // Raw printer bytes for a USB thermal printer connected to the kitchen screen.
+    const width = Number(req.query.width) === 48 ? 48 : 32;
+    const bytes = kotEscpos({ kot_no: k.kot_no, order_no: k.order_no, where, time, station: k.station_name, items, notes: k.notes },
+      { width, beep: req.query.beep === '1' });
+    return res.type('application/octet-stream').send(bytes);
+  }
   const lines = [
     `KOT ${k.kot_no}  ${k.station_name ? `[${k.station_name}]` : ''}`.trim(), `${where}   ${k.order_no}   ${time}`, '-'.repeat(32),
     ...items.flatMap((i) => [

@@ -8,6 +8,10 @@ import { requirePlatform, signToken } from '../middleware/auth.js';
 import { notFound, badRequest, conflict } from '../lib/errors.js';
 import { removeRow } from '../lib/remove.js';
 import { audit } from '../lib/audit.js';
+import { loadIntegrations, maskedIntegrations, saveIntegrations, whatsappReady } from '../lib/integrations.js';
+import { sendWhatsAppHello } from '../lib/providers.js';
+import { normalizePhone } from '../lib/messages.js';
+import { config } from '../config.js';
 
 const r = Router();
 r.use('/platform', (req, res, next) => (req.path.startsWith('/auth/') ? next() : requirePlatform(req, res, next)));
@@ -141,6 +145,46 @@ r.post('/platform/hotels/:id/support-login', async (req, res) => {
   if (!owner) throw notFound('No active owner');
   await audit({ ...req, hotelId: id }, 'platform.support_login', 'hotel', id, { by: req.admin.email });
   res.json({ token: signToken({ type: 'staff', sub: owner.id, hotel_id: id, support: req.admin.id }, '1h') });
+});
+
+// Each hotel's own WhatsApp number, SMS, email and Razorpay keys. Secrets come back masked (last 4 only).
+r.get('/platform/hotels/:id/integrations', async (req, res) => {
+  const id = idParam(req.params.id);
+  if (!(await one('SELECT id FROM hotels WHERE id = $1', [id]))) throw notFound();
+  res.json({ ...maskedIntegrations(await loadIntegrations(id)),
+    razorpay_webhook_url: `${config.publicAppUrl.replace(/\/$/, '')}/api/webhooks/razorpay/${id}` });
+});
+const opt = z.string().trim().max(500).nullable().optional();
+r.put('/platform/hotels/:id/integrations', async (req, res) => {
+  const id = idParam(req.params.id);
+  if (!(await one('SELECT id FROM hotels WHERE id = $1', [id]))) throw notFound();
+  const b = parse(z.object({
+    whatsapp_phone_number_id: z.string().trim().regex(/^\d{6,20}$/, 'Phone number ID is digits only (from WhatsApp Manager → API setup)').nullable().optional().or(z.literal('')),
+    whatsapp_token: opt, whatsapp_language: z.string().trim().max(10).optional(),
+    sms_auth_key: opt, sms_templates: z.record(z.string(), z.string()).optional(),
+    smtp_host: opt, smtp_port: z.number().int().min(1).max(65535).nullable().optional(), smtp_user: opt, smtp_pass: opt, email_from: opt,
+    razorpay_key_id: z.string().trim().regex(/^rzp_(test|live)_\w+$/, 'Razorpay key id starts with rzp_live_ or rzp_test_').nullable().optional().or(z.literal('')),
+    razorpay_key_secret: opt, razorpay_webhook_secret: opt,
+  }), req.body);
+  await saveIntegrations(id, b);
+  // Never log the secrets themselves, only which fields changed.
+  await audit({ ...req, hotelId: id }, 'platform.integrations_updated', 'hotel', id, { fields: Object.keys(b), by: req.admin.email });
+  res.json(maskedIntegrations(await loadIntegrations(id)));
+});
+// Send Meta's ready-made "hello_world" message to check the WhatsApp keys.
+r.post('/platform/hotels/:id/integrations/test-whatsapp', async (req, res) => {
+  const id = idParam(req.params.id);
+  const b = parse(z.object({ to: z.string() }), req.body);
+  const to = normalizePhone(b.to);
+  if (!to) throw badRequest('Enter a valid mobile number');
+  const integ = await loadIntegrations(id);
+  if (!whatsappReady(integ)) throw badRequest('Add the WhatsApp phone number ID and access token first');
+  try {
+    const out = await sendWhatsAppHello(integ, to);
+    res.json({ ok: true, message_id: out.ref });
+  } catch (e) {
+    throw badRequest(e.message);
+  }
 });
 
 // Data export for offboarding (JSON dump of the hotel's records)

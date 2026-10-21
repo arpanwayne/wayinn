@@ -120,7 +120,8 @@ const STATUS_COLORS = {
   dirty: WARN, cleaning: WARN, tentative: WARN, requested: WARN, open: WARN, pending: WARN, received: WARN, unsettled: WARN, trial: WARN,
   high: 'bg-amber-400 text-ink-900', past_due: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
   checked_out: MUTED, closed: MUTED, normal: MUTED, low: 'bg-ink-50 text-ink-400',
-  cancelled: OFF, no_show: OFF,
+  cancelled: OFF, no_show: OFF, skipped: OFF,
+  sent: GOOD, queued: WARN, failed: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
   out_of_order: STOP, urgent: STOP, suspended: STOP,
 };
 export function Badge({ status, children }) {

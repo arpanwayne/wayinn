@@ -10,8 +10,11 @@ import { hotelToday, addDays, DATE_RE, nightsBetween } from '../lib/dates.js';
 import { postRoomNights, folioTotals, loadFolio, voidUndeliveredCharges } from '../lib/folio.js';
 import { guestSchema, createGuest } from './guests.js';
 import { issueInvoice } from './folios.js';
-import { queueNotification } from '../lib/notify.js';
+import { queueNotification, queueStaffAlert } from '../lib/notify.js';
 import { taxOn, taxSettings, roomTaxRate } from '../lib/money.js';
+
+export const OTA_SOURCES = ['makemytrip', 'goibibo', 'oyo', 'booking_com', 'agoda', 'airbnb', 'expedia', 'channel_manager'];
+export const BOOKING_SOURCES = ['walk_in', 'phone', 'direct_online', 'staff', 'ota', 'corporate', 'other', ...OTA_SOURCES];
 
 const r = Router();
 r.use(['/bookings', '/stays', '/calendar', '/frontdesk', '/availability'], requireStaff);
@@ -70,7 +73,7 @@ const stayInput = z.object({
 const bookingInput = z.object({
   guest_id: z.number().int().optional(),
   guest: guestSchema.optional(),
-  source: z.enum(['walk_in', 'phone', 'direct_online', 'staff', 'ota', 'corporate', 'other']).default('staff'),
+  source: z.enum(BOOKING_SOURCES).default('staff'),
   status: z.enum(['requested', 'confirmed']).default('confirmed'),
   special_requests: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -245,7 +248,7 @@ r.patch('/bookings/:id', requirePerm('bookings.modify'), async (req, res) => {
   const id = idParam(req.params.id);
   const b = parse(z.object({
     special_requests: z.string().nullable().optional(), notes: z.string().nullable().optional(),
-    group_name: z.string().nullable().optional(), source: z.string().optional(),
+    group_name: z.string().nullable().optional(), source: z.enum(BOOKING_SOURCES).optional(),
   }), req.body);
   const keys = Object.keys(b);
   if (keys.length) {
@@ -485,8 +488,17 @@ r.post('/stays/:id/checkout', requirePerm('bookings.checkout'), async (req, res)
     await audit(req, 'stay.checked_out', 'stay', id,
       { booking_id: s.booking_id, room: s.room_number, balance_paise: totals.balance_paise, early: checkOutDate !== s.check_out_date,
         closed_orders: closedOrders.map((o) => o.order_no) }, db);
-    return { stay_id: id, totals, invoice, closed_orders: closedOrders.map((o) => o.order_no) };
+    return { stay_id: id, totals, invoice, closed_orders: closedOrders.map((o) => o.order_no), room_id: s.room_id, room_number: s.room_number, arriving_today: !!arrivingToday };
   });
+  // Tell housekeeping / maintenance (no login) on their phones that the room is free to clean and check.
+  if (req.hotel.settings?.checkout_alert !== false) {
+    const open = await one(`SELECT count(*)::int AS n FROM maintenance_requests WHERE room_id = $1 AND status IN ('open','in_progress')`, [out.room_id]);
+    const note = [
+      out.arriving_today ? 'A guest arrives in this room today, please clean it first.' : 'Please clean the room and check that everything works.',
+      open.n ? `${open.n} open maintenance issue(s) on this room.` : '',
+    ].filter(Boolean).join(' ');
+    out.staff_alerted = await queueStaffAlert(req.hotelId, 'room_checkout_alert', { room: out.room_number, hotel: req.hotel.name, note });
+  }
   res.json({ ...out, folio: await loadFolio({ one, many }, req.hotelId, (await one('SELECT id FROM folios WHERE stay_id = $1', [id])).id) });
 });
 

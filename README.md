@@ -62,9 +62,9 @@ Tests (end-to-end against a real database, after migrate + seed): `cd backend &&
 - **GST**: room slabs (default ≤ ₹7,500 → 5%, above → 18%), food 5%, services 18% — all configurable per hotel in Setup. Invoices show SAC codes and CGST/SGST or IGST split. Have the hotel's accountant confirm settings.
 - **Guest QR portal**: each room has a secret QR token. Anyone with the QR sees only the menu and can raise service requests while the room is occupied. Food can be ordered with just the QR, but only while a guest is checked in to that room — an empty room's QR cannot order. The order goes straight to the kitchen (ticket prints on its own) and onto the room bill; the front desk only sees a notice. Seeing the bill and order history requires the check-in PIN or last 4 digits of the booking phone; that session dies at checkout. Hotels that want staff to accept QR orders first can switch that on in Setup.
 - **Roles**: three — **Owner** (everything), **Front desk** (reservations, check-in/out, billing, POS, housekeeping, maintenance, guest requests) and **Kitchen** (one screen: incoming tickets and a *Delivered* button). The owner can grant or revoke any of ~38 permissions per person (refunds, voids, rate overrides, discounts are owner-only by default). Give each person their own login so the activity log shows who did what.
-- **Kitchen**: new tickets print automatically (start Chrome with `--kiosk-printing` and the thermal printer as default to skip the print dialog). The kitchen cannot cancel: if an order can't be made they tell the front desk, who cancels the order or removes the item, which also takes the charge off the room bill and shows a *cancelled — stop* notice in the kitchen.
+- **Kitchen**: new tickets print automatically. Two ways: **direct** to a USB / serial / Bluetooth thermal printer (Kitchen screen → Printer → Connect; Chrome or Edge, ESC/POS, 58 or 80 mm, no dialog), or **browser print** (start Chrome with `--kiosk-printing` and the thermal printer as default to skip the dialog). On Windows the printer's own driver holds the USB port, so use the serial/Bluetooth option or browser print there. The kitchen cannot cancel: if an order can't be made they tell the front desk, who cancels the order or removes the item, which also takes the charge off the room bill and shows a *cancelled — stop* notice in the kitchen.
 - **Alerts** (advisory, humans decide): overdue housekeeping, rooms not ready for arrivals, stuck/unbilled orders, missing room charges, overstays, unpaid checkouts, unusual discounts, repeated voids/refunds/cancellations.
-- **Notifications**: booking confirmation / check-in welcome are queued in `notifications_outbox`; nothing is sent until a provider (WhatsApp Cloud API / SMS / email) is wired and enabled per hotel.
+- **Messages (WhatsApp / SMS / email)**: see "Messages, payments and OTAs" below.
 
 ## Deploy (EC2, same pattern as our other products)
 
@@ -75,10 +75,46 @@ cd ../frontend && npm ci && npm run build && sudo cp -r dist/. /var/www/wayinn/
 ```
 Set `PUBLIC_APP_URL` to the public frontend URL (used inside room QR codes) and `DATABASE_SSL=true` for Neon.
 
-## Release 1 — what's in / what's next
+## Messages, payments and OTAs
 
-**In:** PMS (rooms, rates, calendar, walk-ins, reservations, groups, check-in/out, early/late, room moves, cancellations, no-shows, deposits, refunds), guest profiles, folios & GST invoices, split/partial payments, restaurant POS (dine-in/takeaway/room service, variants, add-ons, stations, KOT print, complimentary, discounts), kitchen display, QR guest portal, housekeeping & maintenance & lost-and-found, staff & permissions, shift handover, owner dashboard & CSV reports, alerts & daily summary, direct-booking request page, super-admin (onboarding, plans, limits, support login, data export).
+Every hotel uses **its own** WhatsApp number, MSG91 account, SMTP mailbox and Razorpay account. The super admin adds the keys in `/platform` → hotel → *Hotel's own keys* (secrets are stored in `hotel_integrations`, shown back only as `••••last4`, never sent to hotel staff). The owner switches things on in **Setup → Messages & payments** and **Setup → Online channels**. A hotel without keys sends nothing (no shared Wayinn number).
 
-**Not built yet:** the outbox worker that actually sends notifications, Razorpay on the booking page, channel manager, AI enquiry replies, ESC/POS printing (today: browser print dialog), offline mode, CSV import, automatic maintenance ticket at checkout.
+**WhatsApp / SMS / email.** Messages are queued in `notifications_outbox` and sent by the outbox worker, which runs inside the API every 30 s (`OUTBOX_IN_API=false` to turn that off and run `npm run outbox -- --watch` as its own PM2 process; `npm run outbox` does one pass). Temporary errors are retried 5 times (1, 5, 30, 120, 360 min); errors that cannot get better (template not approved, bad number) fail at once. The owner sees every message and its status in Setup → Messages & payments.
 
-**Next (needs third-party decisions):** WhatsApp/SMS/email provider worker, Razorpay deposits on the booking page, OTA/channel manager, AI enquiry replies, CSV import tools, ESC/POS direct printing, offline mode.
+Create these **Utility** templates in the hotel's WhatsApp Manager, language `en` (names and the order of `{{n}}` must match):
+
+| Template | Text |
+|---|---|
+| `booking_confirmation` | Dear {{1}}, your booking at {{2}} is confirmed. Booking ID: {{3}}. Check-in: {{4}}. Check-out: {{5}}. We look forward to hosting you. |
+| `checkin_welcome` | Welcome to {{2}}, {{1}}! You are in room {{3}}. Scan the QR code in your room to order food, ask for help or see your bill. Your PIN is {{4}}. |
+| `deposit_received` | Dear {{1}}, we have received your advance payment of {{2}} for booking {{3}} at {{4}}. Thank you. |
+| `room_checkout_alert` | Room {{1}} at {{2}} has just checked out. {{3}} |
+
+For SMS (MSG91 Flow), register the same texts as DLT templates with variables `##var1##`, `##var2##`… and paste each flow/template id in the super-admin form.
+
+**Checkout alert.** Housekeeping and maintenance have no login. The owner enters their mobile numbers (Setup → Messages & payments); on every checkout each number gets `room_checkout_alert` with the room, whether a guest arrives in it today, and how many maintenance issues are open on it. The cleaning task in Housekeeping is created as before.
+
+**Razorpay advance.** Setup → Messages & payments → *Advance payment*: off, first night, a percentage, or the full stay (room + GST). The booking page then opens Razorpay Checkout; the payment is verified by signature, the advance is added to the bill (method *online*, reference = Razorpay payment id) and the booking is **confirmed automatically** if rooms are still free (otherwise it stays a request with a note to call the guest). Add the webhook shown in the super-admin form to the hotel's Razorpay dashboard (events `payment.captured`, `order.paid`) so a guest who closes the page after paying is still recorded. Refunds are still done in Razorpay's dashboard and recorded on the bill by the front desk.
+
+**OTAs (MakeMyTrip, Goibibo, OYO, Booking.com, Agoda, Airbnb, Expedia).** These sites only connect through approved channel managers (STAAH, eZee, AxisRooms, RateGain…). The hotel signs up with one; the channel manager calls the API below with the key from Setup → Online channels. For sites that accept a calendar link (Airbnb, Booking.com), Setup → Online channels also gives one iCal link per room type with the sold-out nights.
+
+### Channel-manager API
+
+Base: `https://<your domain>/api/channel/v1`, header `x-api-key: wyn_…`. Money is in paise, dates `YYYY-MM-DD`. Limit 120 calls/minute.
+
+| Call | What it does |
+|---|---|
+| `GET /room-types` | Room types with id, occupancy, base rate, number of rooms |
+| `GET /availability?from=&to=` | Rooms free per room type for each night (max 90 nights) |
+| `POST /bookings` | New booking: `{ channel, external_ref, guest: {full_name, phone, email}, rooms: [{room_type_id, adults, children, nightly_rate_paise}], check_in_date, check_out_date, paid_to_ota_paise, special_requests }`. `channel` is one of `makemytrip, goibibo, oyo, booking_com, agoda, airbnb, expedia, channel_manager`. Sending the same `channel` + `external_ref` again returns the existing booking (`duplicate: true`). 409 if the rooms are no longer free. |
+| `PATCH /bookings/:channel/:external_ref` | Change dates `{ check_in_date, check_out_date }` (before check-in only) |
+| `POST /bookings/:channel/:external_ref/cancel` | Cancel `{ reason }` (before check-in only; repeat calls are fine) |
+| `GET /bookings/:channel/:external_ref` | Read one booking |
+
+OTA bookings show in Wayinn with the OTA's name as the source and the OTA reference on the booking. A prepaid amount is recorded as an online payment so the desk does not collect it again.
+
+## What's in / what's next
+
+**In:** PMS (rooms, rates, calendar, walk-ins, reservations, groups, check-in/out, early/late, room moves, cancellations, no-shows, deposits, refunds), guest profiles, folios & GST invoices, split/partial payments, restaurant POS (dine-in/takeaway/room service, variants, add-ons, stations, KOT print, complimentary, discounts), kitchen display with direct ESC/POS printing, QR guest portal, housekeeping & maintenance & lost-and-found, checkout alerts to staff phones, staff & permissions, shift handover, owner dashboard & CSV reports, alerts & daily summary, WhatsApp / SMS / email messages, direct-booking page with Razorpay advance, channel-manager API and iCal links for OTAs, super-admin (onboarding, plans, limits, per-hotel keys, support login, data export).
+
+**Not built yet:** AI replies to guest enquiries, CSV import tools, offline mode, network (LAN / Wi-Fi) printers from the kitchen screen, iCal *import* (reading other sites' calendars), automatic refunds through Razorpay. Rates and room counts are not pushed to OTAs: the channel manager reads them from the API.

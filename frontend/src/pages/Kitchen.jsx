@@ -5,10 +5,33 @@ import { useAuth, store } from '../lib/auth.jsx';
 import { ago } from '../lib/format.js';
 import { PageHeader, Loading, Empty, useAction } from '../components/ui.jsx';
 import { printKot } from '../components/printKot.js';
+import * as thermal from '../lib/thermalPrinter.js';
+
+/** Printer choice for this kitchen screen, remembered on this device. */
+function usePrinter() {
+  const [mode, setModeState] = useState(store.get('wayinn.kitchen.printer') || 'browser');
+  const [width, setWidthState] = useState(Number(store.get('wayinn.kitchen.paper')) || 32);
+  const [name, setName] = useState(null);
+  useEffect(() => {
+    setName(null);
+    if (mode !== 'browser') thermal.reconnect(mode).then((ok) => ok && setName(thermal.describe(mode)));
+  }, [mode]);
+  const setMode = (m) => { setModeState(m); store.set('wayinn.kitchen.printer', m); };
+  const setWidth = (w) => { setWidthState(w); store.set('wayinn.kitchen.paper', String(w)); };
+  const connect = async () => setName(await thermal.connect(mode));
+  // Direct to the thermal printer when connected; otherwise the browser print (works everywhere).
+  const print = async (kotId) => {
+    if (mode !== 'browser' && name) {
+      try { return await thermal.printKotDirect(mode, kotId, { width }); } catch { setName(null); }
+    }
+    return printKot(kotId);
+  };
+  return { mode, setMode, width, setWidth, name, connect, print };
+}
 
 const where = (k) => (k.order_type === 'room_service' ? `ROOM ${k.room_number}` : k.order_type === 'dine_in' ? `TABLE ${k.table_label || '—'}` : 'TAKEAWAY');
 
-function KotCard({ k, onDelivered, busy }) {
+function KotCard({ k, onDelivered, busy, print }) {
   const mins = Math.round((Date.now() - new Date(k.created_at)) / 60000);
   const late = mins > 20;
   return (
@@ -31,7 +54,7 @@ function KotCard({ k, onDelivered, busy }) {
         {k.order_notes && <div className="mt-2 rounded bg-amber-50 px-2 py-1 text-sm">{k.order_notes}</div>}
       </div>
       <div className="flex items-center gap-2 border-t border-ink-100 p-3">
-        <button className="btn-ghost btn-sm" onClick={() => printKot(k.id)}>Print again</button>
+        <button className="btn-ghost btn-sm" onClick={() => print(k.id)}>Print again</button>
         <div className="flex-1" />
         <button className="btn-primary px-6 py-2.5 text-base" disabled={busy} onClick={() => onDelivered(k)}>Delivered</button>
       </div>
@@ -46,6 +69,7 @@ export default function Kitchen() {
   const menu = useApi('/menu');
   const { data, reload } = useApi(`/kitchen/kots${station ? `?station_id=${station}` : ''}`, { interval: 6000 });
   const [run, busy] = useAction();
+  const printer = usePrinter();
   const attempted = useRef(new Set());
   const printing = useRef(false);
 
@@ -61,12 +85,12 @@ export default function Kitchen() {
         attempted.current.add(k.id);
         try {
           await api.patch(`/kots/${k.id}`, { printed: true });
-          await printKot(k.id);
+          await printer.print(k.id);
         } catch { /* stays on screen; "Print again" is available */ }
       }
       printing.current = false;
     })();
-  }, [data, autoPrint]);
+  }, [data, autoPrint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!data) return <Loading />;
   const delivered = (k) => run(async () => { await api.patch(`/kots/${k.id}`, { status: 'delivered' }); reload(); }, `${where(k)} — delivered`);
@@ -111,10 +135,27 @@ export default function Kitchen() {
 
       {!data.kots.length ? <div className="card"><Empty>No orders right now</Empty></div> : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {data.kots.map((k) => <KotCard key={k.id} k={k} onDelivered={delivered} busy={busy} />)}
+          {data.kots.map((k) => <KotCard key={k.id} k={k} onDelivered={delivered} busy={busy} print={printer.print} />)}
         </div>
       )}
-      <p className="mt-6 text-xs text-ink-400">Can't make an order? Tell the front desk — only they can cancel it. For printing without a dialog, open this screen in Chrome started with <code>--kiosk-printing</code> and set the thermal printer as the default printer.</p>
+      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-xl border border-ink-100 bg-white p-3 text-sm">
+        <span className="font-semibold">Printer</span>
+        <select className="input w-auto py-1.5" value={printer.mode} onChange={(e) => printer.setMode(e.target.value)}>
+          <option value="browser">Browser print</option>
+          {thermal.supported.usb && <option value="usb">USB thermal printer (direct)</option>}
+          {thermal.supported.serial && <option value="serial">Serial / Bluetooth printer (direct)</option>}
+        </select>
+        {printer.mode !== 'browser' && <>
+          <select className="input w-auto py-1.5" value={printer.width} onChange={(e) => printer.setWidth(Number(e.target.value))}>
+            <option value={32}>58 mm paper</option><option value={48}>80 mm paper</option>
+          </select>
+          {printer.name
+            ? <><span className="badge bg-brand-50 text-brand-700">Connected: {printer.name}</span>
+              <button className="btn-ghost btn-sm" onClick={() => run(() => thermal.printTest(printer.mode, printer.width), 'Test slip sent')}>Test print</button></>
+            : <button className="btn-primary btn-sm" onClick={() => run(printer.connect, 'Printer connected')}>Connect printer</button>}
+        </>}
+      </div>
+      <p className="mt-3 text-xs text-ink-400">Can't make an order? Tell the front desk — only they can cancel it. Direct printing sends the ticket straight to the thermal printer with no dialog (Chrome or Edge; on Windows use the serial/Bluetooth option or browser print). With browser print, Chrome started with <code>--kiosk-printing</code> and the thermal printer as default also skips the dialog.</p>
     </div>
   );
 }
