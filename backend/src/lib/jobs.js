@@ -2,6 +2,7 @@
 import { many, tx } from '../db.js';
 import { postRoomNights } from './folio.js';
 import { hotelToday } from './dates.js';
+import { processOutbox } from './outbox.js';
 
 async function autoNightAudit() {
   const hotels = await many(`SELECT * FROM hotels WHERE subscription_status IN ('trial','active','past_due')`);
@@ -30,4 +31,13 @@ export function startJobs() {
   const every = Number(process.env.NIGHT_AUDIT_INTERVAL_MIN || 30) * 60 * 1000;
   setTimeout(() => autoNightAudit().catch(console.error), 10_000);
   setInterval(() => autoNightAudit().catch(console.error), every);
+  // WhatsApp / SMS / email delivery. Set OUTBOX_IN_API=false if a separate `npm run outbox -- --watch` runs instead.
+  if (process.env.OUTBOX_IN_API !== 'false') {
+    let busy = false;
+    setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try { await processOutbox(); } catch (e) { console.error('outbox failed:', e.message); } finally { busy = false; }
+    }, Number(process.env.OUTBOX_INTERVAL_SEC || 30) * 1000);
+  }
 }
