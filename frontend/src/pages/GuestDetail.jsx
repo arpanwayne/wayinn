@@ -4,6 +4,7 @@ import { useApi } from '../lib/hooks.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { fmtDate, plural } from '../lib/format.js';
+import GuestDocuments from '../components/GuestDocuments.jsx';
 import { PageHeader, Loading, Field, Badge, Modal, Empty, DeleteDialog, useAction } from '../components/ui.jsx';
 
 const FIELDS = [['full_name', 'Full name'], ['phone', 'Phone'], ['email', 'Email'], ['address', 'Address'], ['city', 'City'], ['country', 'Country'],
@@ -83,6 +84,7 @@ export default function GuestDetail() {
             ))}
           </ul>
         </div>
+        {editable && <div className="lg:col-span-3"><GuestDocuments guestId={id} /></div>}
       </div>
     </div>
   );

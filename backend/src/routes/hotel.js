@@ -55,6 +55,12 @@ const settingsSchema = z.object({
     staff_alert_phones: z.array(z.string().trim().regex(/^\+?[0-9 -]{8,16}$/, 'Phone numbers only')).max(10).optional(),
     staff_alert_channel: z.enum(['whatsapp', 'sms']).optional(),
     checkout_alert: z.boolean().optional(),
+    // Housekeeping / maintenance people with a WhatsApp number but no login: new tasks go to their team, and they can reply DONE / FIXED.
+    staff_contacts: z.array(z.object({
+      name: z.string().trim().min(1).max(60), phone: z.string().trim().regex(/^\+?[0-9 -]{8,16}$/, 'Phone numbers only'),
+      team: z.enum(['housekeeping', 'maintenance']),
+    })).max(20).optional(),
+    team_alerts: z.boolean().optional(),
     // Advance payment on the public booking page (Razorpay).
     online_deposit: z.object({ mode: z.enum(['off', 'first_night', 'percent', 'full']), percent: z.number().int().min(1).max(100).default(25) }).optional(),
   }).partial().optional(),

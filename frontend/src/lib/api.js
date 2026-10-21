@@ -13,12 +13,12 @@ function tokenFor(scope) {
   try { return localStorage.getItem(scope === 'platform' ? 'wayinn.platform' : scope === 'guest' ? 'wayinn.guest' : 'wayinn.token'); } catch { return null; }
 }
 
-export async function request(method, path, body, { scope = 'staff', raw = false } = {}) {
+export async function request(method, path, body, { scope = 'staff', raw = false, file = null } = {}) {
   const token = tokenFor(scope);
   const res = await fetch(BASE + path, {
     method,
-    headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { ...(file ? { 'content-type': file.type } : body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: file || (body ? JSON.stringify(body) : undefined),
   });
   if (raw) {
     if (!res.ok) throw new ApiError(res.status, { error: await res.text() });
@@ -53,4 +53,12 @@ export async function downloadCsv(path, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+/** Upload one file as the raw request body (used for guest documents). */
+export const uploadFile = (path, file) => request('POST', path, null, { file });
+
+/** Fetch a protected file (needs the login header, so it cannot be a plain <img src>) as a blob URL. */
+export async function blobUrl(path) {
+  return URL.createObjectURL(await (await request('GET', path, null, { raw: true })).blob());
 }

@@ -5,9 +5,10 @@ import { api } from '../lib/api.js';
 import { Field, Badge, useAction } from './ui.jsx';
 
 const P = { scope: 'platform' };
-const SECRETS = ['whatsapp_token', 'sms_auth_key', 'smtp_pass', 'razorpay_key_secret', 'razorpay_webhook_secret'];
+const SECRETS = ['whatsapp_token', 'whatsapp_app_secret', 'whatsapp_verify_token', 'sms_auth_key', 'smtp_pass', 'razorpay_key_secret', 'razorpay_webhook_secret'];
 const PLAIN = ['whatsapp_phone_number_id', 'whatsapp_language', 'smtp_host', 'smtp_user', 'email_from', 'razorpay_key_id'];
-const TEMPLATES = [['booking_confirmation', 'Booking confirmed'], ['checkin_welcome', 'Check-in welcome'], ['deposit_received', 'Advance received'], ['room_checkout_alert', 'Room checked out (staff)']];
+const TEMPLATES = [['booking_confirmation', 'Booking confirmed'], ['checkin_welcome', 'Check-in welcome'], ['deposit_received', 'Advance received'], ['room_checkout_alert', 'Room checked out (staff)'],
+  ['checkin_documents_request', 'Ask guest for ID'], ['hk_task_alert', 'New housekeeping task (staff)'], ['maintenance_alert', 'New maintenance request (staff)']];
 
 export default function HotelKeys({ hotelId }) {
   const [saved, setSaved] = useState(null);
@@ -37,12 +38,15 @@ export default function HotelKeys({ hotelId }) {
   return (
     <div className="space-y-4 rounded-xl border border-ink-100 p-3">
       <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">Hotel's own keys</span>
-        {[['whatsapp', 'WhatsApp'], ['sms', 'SMS'], ['email', 'Email'], ['razorpay', 'Razorpay']].map(([k, l]) => <Badge key={k} status={st[k] ? 'active' : 'cancelled'}>{l}{st[k] ? ' ✓' : ''}</Badge>)}</div>
+        {[['whatsapp', 'WhatsApp'], ['whatsapp_inbound', 'Incoming'], ['sms', 'SMS'], ['email', 'Email'], ['razorpay', 'Razorpay']].map(([k, l]) => <Badge key={k} status={st[k] ? 'active' : 'cancelled'}>{l}{st[k] ? ' ✓' : ''}</Badge>)}</div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         {plain('whatsapp_phone_number_id', 'WhatsApp phone number ID', 'from WhatsApp Manager → API setup')}
         {secret('whatsapp_token', 'WhatsApp access token (permanent)')}
         {plain('whatsapp_language', 'Template language', 'en')}
+        {secret('whatsapp_verify_token', 'Webhook verify token (any secret text)')}
+        {secret('whatsapp_app_secret', 'Meta app secret')}
+        <div className="text-xs text-ink-500 sm:col-span-3">Receiving guest IDs and staff replies: in the hotel's Meta app → WhatsApp → Configuration set the callback URL to <code className="break-all">{saved.whatsapp_webhook_url}</code>, the verify token above, and subscribe to <b>messages</b>. Status: {st.whatsapp_inbound ? 'ready' : 'needs verify token + app secret'}.</div>
         <div className="flex items-end gap-2 sm:col-span-3">
           <Field label="Send test (Meta hello_world)"><input className="input" placeholder="Mobile number" value={testTo} onChange={(e) => setTestTo(e.target.value)} /></Field>
           <button className="btn-secondary" disabled={busy || !st.whatsapp || !testTo} onClick={() => run(() => api.post(`/platform/hotels/${hotelId}/integrations/test-whatsapp`, { to: testTo }, P), 'Test message sent')}>Send test</button>

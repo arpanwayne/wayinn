@@ -8,6 +8,7 @@ export async function loadIntegrations(hotelId, db = { one }) {
 }
 
 export const whatsappReady = (i) => !!(i?.whatsapp_phone_number_id && i?.whatsapp_token);
+export const whatsappInboundReady = (i) => whatsappReady(i) && !!(i?.whatsapp_verify_token && i?.whatsapp_app_secret);
 export const smsReady = (i) => !!i?.sms_auth_key;
 export const emailReady = (i) => !!(i?.smtp_host && i?.email_from);
 export const razorpayReady = (i) => !!(i?.razorpay_key_id && i?.razorpay_key_secret);
@@ -15,14 +16,14 @@ export const razorpayReady = (i) => !!(i?.razorpay_key_id && i?.razorpay_key_sec
 /** What hotel staff may see. */
 export function integrationStatus(i) {
   return {
-    whatsapp: whatsappReady(i), sms: smsReady(i), email: emailReady(i), razorpay: razorpayReady(i),
+    whatsapp: whatsappReady(i), whatsapp_inbound: whatsappInboundReady(i), sms: smsReady(i), email: emailReady(i), razorpay: razorpayReady(i),
     channel_key_hint: i?.channel_key_hint || null, ical_enabled: !!i?.ical_token,
   };
 }
 
 const mask = (v) => (v ? `••••${String(v).slice(-4)}` : null);
-const SECRET = ['whatsapp_token', 'sms_auth_key', 'smtp_pass', 'razorpay_key_secret', 'razorpay_webhook_secret'];
-export const INTEGRATION_FIELDS = ['whatsapp_phone_number_id', 'whatsapp_token', 'whatsapp_language', 'sms_auth_key', 'sms_templates',
+const SECRET = ['whatsapp_token', 'whatsapp_app_secret', 'whatsapp_verify_token', 'sms_auth_key', 'smtp_pass', 'razorpay_key_secret', 'razorpay_webhook_secret'];
+export const INTEGRATION_FIELDS = ['whatsapp_phone_number_id', 'whatsapp_token', 'whatsapp_language', 'whatsapp_verify_token', 'whatsapp_app_secret', 'sms_auth_key', 'sms_templates',
   'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'email_from', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret'];
 
 /** What the super admin sees: secrets masked to their last 4 characters. */
