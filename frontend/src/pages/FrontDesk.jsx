@@ -59,8 +59,8 @@ function KeyRack({ counts: c, rooms }) {
               </div>
             ))}
           </div>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 pl-[4.25rem] text-xs text-night-100">
-            {KEY_LEGEND.map(([k, l]) => <span key={k} className="flex items-center gap-1.5"><span className={`h-3 w-3 rounded ${KEY[k]}`} />{l}</span>)}
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 pl-17 text-xs text-night-100">
+            {KEY_LEGEND.map(([k, l]) => <span key={k} className="flex items-center gap-1.5"><span className={`h-3 w-3 rounded-sm ${KEY[k]}`} />{l}</span>)}
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-ink-900 ring-1 ring-white" />Due out today</span>
           </div>
         </div>

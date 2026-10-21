@@ -149,7 +149,7 @@ export default function Pos() {
                 <button key={i.id} disabled={!i.available} onClick={() => (i.variants.length || i.addons.length ? setPicking(i) : setCart([...cart, { menu_item_id: i.id, name: i.name, variant: null, addons: [], quantity: 1, unit: i.price_paise }]))}
                   className="card flex h-24 flex-col justify-between p-3 text-left transition hover:border-night-300 hover:shadow-lift disabled:opacity-40">
                   <span className="flex items-start gap-1.5 text-sm font-semibold leading-tight">
-                    {i.is_veg !== null && <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-sm border-2 ${i.is_veg ? 'border-green-600' : 'border-red-600'}`} />}{i.name}</span>
+                    {i.is_veg !== null && <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-xs border-2 ${i.is_veg ? 'border-green-600' : 'border-red-600'}`} />}{i.name}</span>
                   <span className="num text-sm text-ink-700">{!i.available ? 'Unavailable' : i.variants.length ? i.variants.map((v) => rupees0(v.price_paise)).filter((x, n, a) => a.indexOf(x) === n).join(' / ') : rupees0(i.price_paise)}</span>
                 </button>
               ))}
@@ -162,7 +162,7 @@ export default function Pos() {
               <>
                 <div className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-ink-100 p-1">
                   {[['dine_in', 'Dine-in'], ['takeaway', 'Takeaway'], ['room_service', 'Room']].map(([v, l]) => (
-                    <button key={v} onClick={() => setType(v)} className={`rounded-md py-1.5 text-sm font-semibold ${type === v ? 'bg-white shadow' : 'text-ink-500'}`}>{l}</button>
+                    <button key={v} onClick={() => setType(v)} className={`rounded-md py-1.5 text-sm font-semibold ${type === v ? 'bg-white shadow-sm' : 'text-ink-500'}`}>{l}</button>
                   ))}
                 </div>
                 {type === 'dine_in' && <input className="input mb-2" placeholder="Table no." value={table} onChange={(e) => setTable(e.target.value)} />}

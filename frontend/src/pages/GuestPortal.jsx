@@ -97,7 +97,7 @@ export default function GuestPortal() {
               <div key={i.id} className={`card p-3 ${i.available ? '' : 'opacity-50'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-1.5 font-semibold">{i.is_veg !== null && <span className={`h-2.5 w-2.5 rounded-sm border-2 ${i.is_veg ? 'border-green-600' : 'border-red-600'}`} />}{i.name}</div>
+                    <div className="flex items-center gap-1.5 font-semibold">{i.is_veg !== null && <span className={`h-2.5 w-2.5 rounded-xs border-2 ${i.is_veg ? 'border-green-600' : 'border-red-600'}`} />}{i.name}</div>
                     {i.description && <div className="text-xs text-ink-500">{i.description}</div>}
                     {!i.variants.length && <div className="mt-1 text-sm">{rupees0(i.price_paise)}</div>}
                     {i.variants.length > 0 && !(i.available && info.occupied) && <div className="mt-1 text-sm">{i.variants.map((v) => `${v.name} ${rupees0(v.price_paise)}`).join(' · ')}</div>}
@@ -178,9 +178,9 @@ export default function GuestPortal() {
               <div key={c.key} className="flex items-center justify-between">
                 <span>{c.name}{c.variant && ` (${c.variant})`}</span>
                 <span className="flex items-center gap-2">
-                  <button className="h-6 w-6 rounded bg-ink-100" onClick={() => setCart(cart.map((x) => (x.key === c.key ? { ...x, quantity: x.quantity - 1 } : x)).filter((x) => x.quantity))}>−</button>
+                  <button className="h-6 w-6 rounded-sm bg-ink-100" onClick={() => setCart(cart.map((x) => (x.key === c.key ? { ...x, quantity: x.quantity - 1 } : x)).filter((x) => x.quantity))}>−</button>
                   {c.quantity}
-                  <button className="h-6 w-6 rounded bg-ink-100" onClick={() => setCart(cart.map((x) => (x.key === c.key ? { ...x, quantity: x.quantity + 1 } : x)))}>+</button>
+                  <button className="h-6 w-6 rounded-sm bg-ink-100" onClick={() => setCart(cart.map((x) => (x.key === c.key ? { ...x, quantity: x.quantity + 1 } : x)))}>+</button>
                 </span>
               </div>
             ))}

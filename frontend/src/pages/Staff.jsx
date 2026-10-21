@@ -81,7 +81,7 @@ export default function Staff() {
                   const def = roleDefaults(form.role).includes(p);
                   const on = effective.has(p);
                   return (
-                    <label key={p} className={`flex items-start gap-2 rounded px-2 py-1 text-sm ${on !== def ? 'bg-amber-50' : ''}`}>
+                    <label key={p} className={`flex items-start gap-2 rounded-sm px-2 py-1 text-sm ${on !== def ? 'bg-amber-50' : ''}`}>
                       <input type="checkbox" className="mt-1" checked={on} disabled={form.role === 'owner'} onChange={() => toggle(p)} />
                       <span>{desc}<span className="block text-[10px] text-ink-400">{p}</span></span>
                     </label>

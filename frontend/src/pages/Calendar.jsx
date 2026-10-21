@@ -103,7 +103,7 @@ export default function Calendar() {
                       return (
                         <Link key={s.id} to={`/bookings/${s.booking_id}`} title={`${s.guest_name} · ${s.ref} · ${fmtDate(s.check_in_date)}–${fmtDate(s.check_out_date)}`}
                           style={{ left: s.check_in_date < from ? 140 : left, width: s.check_in_date < from ? width + CELL / 2 : width }}
-                          className={`absolute top-1.5 flex h-7 items-center overflow-hidden rounded-lg px-2 text-xs font-semibold shadow-sm ${COLORS[s.status] || 'bg-ink-400 text-white'}`}>
+                          className={`absolute top-1.5 flex h-7 items-center overflow-hidden rounded-lg px-2 text-xs font-semibold shadow-xs ${COLORS[s.status] || 'bg-ink-400 text-white'}`}>
                           <span className="truncate">{s.guest_name}</span>
                         </Link>
                       );
@@ -129,7 +129,7 @@ export default function Calendar() {
       )}
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-ink-500">
         {Object.entries({ reserved: 'Reserved', checked_in: 'In house', checked_out: 'Departed', tentative: 'Requested' }).map(([k, l]) => (
-          <span key={k} className="flex items-center gap-1.5"><span className={`h-3 w-3 rounded ${COLORS[k]}`} />{l}</span>
+          <span key={k} className="flex items-center gap-1.5"><span className={`h-3 w-3 rounded-sm ${COLORS[k]}`} />{l}</span>
         ))}
       </div>
     </div>
