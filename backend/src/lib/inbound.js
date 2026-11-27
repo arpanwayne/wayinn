@@ -1,10 +1,13 @@
 // Messages that arrive on the hotel's own WhatsApp number (Meta Cloud API webhook):
 //  - a guest sends a photo / PDF of an ID  → saved as a guest document, matched to the guest by phone number
 //  - housekeeping / maintenance reply "DONE 101" / "FIXED 12" → the task is closed
+//  - the owner replies "YES K7P2" / "NO K7P2" / "YES ALL" to a Rate Guard alert → the rate is approved / skipped
 // Anything else is ignored. `deps` lets tests swap the network calls.
 import { one, tx } from '../db.js';
 import { downloadWhatsAppMedia, sendWhatsAppText, ProviderError } from './providers.js';
 import { normalizePhone } from './messages.js';
+import { parseReply } from './rateguard/rules.js';
+import { loadConfig, decide, decideAll, isApprover } from './rateguard/engine.js';
 
 export const DOC_MIME = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
 
@@ -120,6 +123,33 @@ async function staffCommand(hotel, integ, msg, deps) {
   return 'staff_command';
 }
 
+const rs = (p) => `Rs. ${Math.round(Number(p) / 100).toLocaleString('en-IN')}`;
+const day = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+
+/** Rate Guard: YES / NO <code> or YES / NO ALL from one of the owner's alert numbers. */
+async function rateGuardReply(hotel, integ, msg, deps) {
+  const cmd = parseReply(msg.text?.body);
+  if (!cmd) return 'ignored';
+  const cfg = await loadConfig(hotel.id);
+  if (!isApprover(cfg, msg.from)) return 'ignored'; // only the numbers set in Rate Guard may change rates
+  const actor = { via: 'whatsapp', phone: msg.from };
+  let text;
+  if (cmd.target === 'ALL') {
+    const n = await decideAll(hotel, cmd.approve, actor);
+    text = n ? `${cmd.approve ? 'Approved' : 'Skipped'} ${n} rate suggestion${n === 1 ? '' : 's'}.${cmd.approve ? ' The new rates are live on your booking page.' : ''}`
+      : 'There are no open rate suggestions.';
+  } else {
+    const out = await decide(hotel, { code: cmd.target }, cmd.approve, actor);
+    const s = out.suggestion;
+    if (out.error === 'not_found') text = `No open rate suggestion ${cmd.target}. It may already be decided or replaced by a newer one.`;
+    else if (out.error === 'expired') text = `Suggestion ${cmd.target} is for a date that has passed.`;
+    else if (cmd.approve) text = `Done. ${s.room_type} on ${day(s.stay_date)} is now ${rs(s.suggested_rate_paise)} + GST.`;
+    else text = `OK, ${s.room_type} on ${day(s.stay_date)} stays at ${rs(s.current_rate_paise)}.`;
+  }
+  await reply(integ, msg.from, text, deps);
+  return 'rate_guard_reply';
+}
+
 /** Process one webhook delivery. Returns a count per outcome (used by tests and logs). */
 export async function processWhatsAppWebhook(hotel, integ, body, deps = {}) {
   const result = {};
@@ -131,7 +161,10 @@ export async function processWhatsAppWebhook(hotel, integ, body, deps = {}) {
       const names = Object.fromEntries((v.contacts || []).map((c) => [c.wa_id, c.profile?.name]));
       for (const msg of v.messages || []) {
         if (['image', 'document'].includes(msg.type)) bump(await saveDocument(hotel, integ, msg, names[msg.from], deps));
-        else if (msg.type === 'text') bump(await staffCommand(hotel, integ, msg, deps));
+        else if (msg.type === 'text') {
+          const rg = await rateGuardReply(hotel, integ, msg, deps);
+          bump(rg === 'ignored' ? await staffCommand(hotel, integ, msg, deps) : rg);
+        }
         else bump('ignored');
       }
     }

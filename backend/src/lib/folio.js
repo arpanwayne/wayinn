@@ -1,5 +1,6 @@
 import { roomTaxRate, taxOn, taxSettings } from './money.js';
 import { stayNights, addDays } from './dates.js';
+import { stayNightRate } from './rates.js';
 
 /** Charges, payments and balance for a folio. `db` is pool helpers or a tx client. */
 export async function folioTotals(db, folioId) {
@@ -31,10 +32,11 @@ export async function postRoomNights(db, hotel, stay, folioId, uptoDate, userId 
   const until = uptoDate < lastNight ? uptoDate : lastNight;
   const ts = taxSettings(hotel);
   const roomNo = stay.room_number ? `Room ${stay.room_number}` : 'Room';
-  const tariff = Number(stay.nightly_rate_paise) + Number(stay.extra_person_paise || 0);
-  const rate = roomTaxRate(hotel, tariff);
   let posted = 0;
   for (const night of stayNights(stay.check_in_date, addDays(until, 1))) {
+    // Calendar-priced stays carry a rate per night; the GST slab follows each night's tariff.
+    const tariff = stayNightRate(stay, night) + Number(stay.extra_person_paise || 0);
+    const rate = roomTaxRate(hotel, tariff);
     const r = await db.query(
       `INSERT INTO folio_lines (hotel_id, folio_id, category, description, hsn_sac, quantity, unit_price_paise,
                                 amount_paise, tax_rate, tax_paise, business_date, source_type, source_id, created_by)

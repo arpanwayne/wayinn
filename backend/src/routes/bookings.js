@@ -12,9 +12,10 @@ import { guestSchema, createGuest } from './guests.js';
 import { issueInvoice } from './folios.js';
 import { queueNotification, queueStaffAlert } from '../lib/notify.js';
 import { taxOn, taxSettings, roomTaxRate } from '../lib/money.js';
+import { nightlyRates, quoteNights, quoteStay, flatRates } from '../lib/rates.js';
 
 export const OTA_SOURCES = ['makemytrip', 'goibibo', 'oyo', 'booking_com', 'agoda', 'airbnb', 'expedia', 'channel_manager'];
-export const BOOKING_SOURCES = ['walk_in', 'phone', 'direct_online', 'staff', 'ota', 'corporate', 'other', ...OTA_SOURCES];
+export const BOOKING_SOURCES = ['walk_in', 'phone', 'direct_online', 'google', 'staff', 'ota', 'corporate', 'other', ...OTA_SOURCES];
 
 const r = Router();
 r.use(['/bookings', '/stays', '/calendar', '/frontdesk', '/availability'], requireStaff);
@@ -41,11 +42,21 @@ export async function availability(db, hotelId, from, to, excludeStayId = null) 
         AND NOT EXISTS (SELECT 1 FROM stays s WHERE s.room_id = r.id AND s.status IN ('reserved','checked_in')
                          AND s.check_in_date < $3 AND s.check_out_date > $2 AND ($4::bigint IS NULL OR s.id <> $4))
       ORDER BY r.number`, [hotelId, from, to, excludeStayId]);
-  return types.map((t) => ({
-    ...t,
-    available: Math.max(0, t.total_rooms - t.booked),
-    free_rooms: freeRooms.filter((x) => x.room_type_id === t.id),
-  }));
+  // Date-wise price of the stay from the rate calendar (base rate where no date is set).
+  const grid = await nightlyRates(db, hotelId, from, to, types);
+  return types.map((t) => {
+    const q = quoteNights(grid.get(Number(t.id)));
+    return {
+      ...t,
+      available: Math.max(0, t.total_rooms - t.booked),
+      free_rooms: freeRooms.filter((x) => x.room_type_id === t.id),
+      rate_paise: q.avg_paise, // average per night for these dates
+      stay_total_paise: q.total_paise,
+      rates_vary: !flatRates(q.nightly_rates),
+      nightly: grid.get(Number(t.id)).map((n) => ({ date: n.date, rate_paise: n.rate_paise })),
+      closed_reason: q.closed_reason,
+    };
+  });
 }
 
 r.get('/availability', requirePerm('bookings.view'), async (req, res) => {
@@ -87,8 +98,12 @@ const bookingInput = z.object({
   check_in_now: z.boolean().default(false), // walk-in convenience
 }).refine((b) => b.guest_id || b.guest, { message: 'Guest is required', path: ['guest'] });
 
-/** Validate one stay against room type/room and compute pricing. Throws on problems. */
-async function prepareStay(db, req, s, excludeStayId = null) {
+/**
+ * Validate one stay against room type/room and compute pricing. Throws on problems.
+ * Price: the rate calendar, night by night, unless a nightly rate is typed in (needs rates.override).
+ * With checkRate = false only the room / availability checks run (confirming a request, moving a room).
+ */
+async function prepareStay(db, req, s, excludeStayId = null, { checkRate = true } = {}) {
   if (s.check_out_date <= s.check_in_date) throw badRequest('Check-out must be after check-in');
   if (nightsBetween(s.check_in_date, s.check_out_date) > 90) throw badRequest('Stays longer than 90 nights are not supported');
   const rt = await db.one('SELECT * FROM room_types WHERE id = $1 AND hotel_id = $2 AND active', [s.room_type_id, req.hotelId]);
@@ -109,10 +124,18 @@ async function prepareStay(db, req, s, excludeStayId = null) {
     const t = avail.find((a) => a.id === rt.id);
     if (!t || t.available < 1) throw conflict(`No ${rt.name} rooms available for these dates`);
   }
-  const rate = s.nightly_rate_paise ?? rt.base_rate_paise;
-  if (rate !== rt.base_rate_paise) assertPerm(req, 'rates.override', 'You are not allowed to change the room rate');
   const extraPersons = Math.max(0, s.adults - rt.base_occupancy);
-  return { rt, rate, extra: extraPersons * rt.extra_person_rate_paise };
+  const extra = extraPersons * rt.extra_person_rate_paise;
+  if (!checkRate) return { rt, rate: s.nightly_rate_paise, nightly_rates: s.nightly_rates ?? null, extra, warnings: [] };
+  const q = await quoteStay(db, req.hotelId, rt, s.check_in_date, s.check_out_date);
+  const flat = flatRates(q.nightly_rates);
+  const warnings = q.closed_reason ? [`${rt.name}: ${q.closed_reason} (booked by staff anyway)`] : [];
+  // A typed rate equal to the calendar's (flat) rate is not an override.
+  if (s.nightly_rate_paise === undefined || s.nightly_rate_paise === null || (flat && s.nightly_rate_paise === q.avg_paise)) {
+    return { rt, rate: q.avg_paise, nightly_rates: flat ? null : q.nightly_rates, extra, warnings };
+  }
+  assertPerm(req, 'rates.override', 'You are not allowed to change the room rate');
+  return { rt, rate: s.nightly_rate_paise, nightly_rates: null, extra, warnings };
 }
 
 r.post('/bookings', requirePerm('bookings.create'), async (req, res) => {
@@ -138,16 +161,18 @@ r.post('/bookings', requirePerm('bookings.create'), async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [req.hotelId, ref, guestId, b.source, b.status, b.special_requests, b.notes, b.group_name, req.user.id]);
     const stays = [];
+    const warnings = [];
     for (const s of b.stays) {
-      const { rate, extra } = await prepareStay(db, req, s);
+      const { rate, extra, nightly_rates, warnings: w } = await prepareStay(db, req, s);
+      warnings.push(...w);
       let stayGuest = s.guest_id || guestId;
       if (s.guest) stayGuest = (await createGuest(db, req.hotelId, s.guest)).id;
       const stay = await db.one(
         `INSERT INTO stays (hotel_id, booking_id, guest_id, room_type_id, room_id, check_in_date, check_out_date,
-                            adults, children, nightly_rate_paise, extra_person_paise, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+                            adults, children, nightly_rate_paise, extra_person_paise, status, nightly_rates)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [req.hotelId, booking.id, stayGuest, s.room_type_id, s.room_id || null, s.check_in_date, s.check_out_date,
-          s.adults, s.children, rate, extra, b.status === 'requested' ? 'tentative' : 'reserved']);
+          s.adults, s.children, rate, extra, b.status === 'requested' ? 'tentative' : 'reserved', nightly_rates ? JSON.stringify(nightly_rates) : null]);
       const folio = await db.one(
         `INSERT INTO folios (hotel_id, kind, stay_id, booking_id, guest_id) VALUES ($1,'stay',$2,$3,$4) RETURNING id`,
         [req.hotelId, stay.id, booking.id, stayGuest]);
@@ -162,10 +187,10 @@ r.post('/bookings', requirePerm('bookings.create'), async (req, res) => {
     }
     await audit(req, 'booking.created', 'booking', booking.id,
       { ref, stays: stays.length, source: b.source, deposit_paise: b.deposit?.amount_paise || 0 }, db);
-    return { booking, stays };
+    return { booking, stays, warnings };
   });
 
-  const warnings = [];
+  const warnings = [...result.warnings];
   if (b.check_in_now && b.status === 'confirmed') {
     for (const s of result.stays) {
       if (s.check_in_date !== today || !s.room_id) continue;
@@ -269,7 +294,7 @@ r.post('/bookings/:id/confirm', requirePerm('bookings.create'), async (req, res)
     if (bk.status !== 'requested') throw badRequest('Only requested bookings can be confirmed');
     const stays = await db.many(`SELECT * FROM stays WHERE booking_id = $1 AND status = 'tentative'`, [id]);
     for (const s of stays) {
-      await prepareStay(db, req, { ...s, nightly_rate_paise: s.nightly_rate_paise, children: s.children }, s.id);
+      await prepareStay(db, req, { ...s, nightly_rate_paise: s.nightly_rate_paise, children: s.children }, s.id, { checkRate: false });
       await db.query(`UPDATE stays SET status = 'reserved' WHERE id = $1`, [s.id]);
     }
     await db.query(`UPDATE bookings SET status = 'confirmed' WHERE id = $1`, [id]);
@@ -351,16 +376,32 @@ r.patch('/stays/:id', requirePerm('bookings.modify'), async (req, res) => {
       nightly_rate_paise: b.nightly_rate_paise ?? (b.room_type_id && b.room_type_id !== s.room_type_id ? undefined : s.nightly_rate_paise),
     };
     if (s.status === 'checked_in' && !next.room_id) throw badRequest('A checked-in guest must have a room');
-    // keep current rate unless explicitly changed; only rate changes need rates.override
-    const rtCur = await db.one('SELECT base_rate_paise FROM room_types WHERE id = $1', [next.room_type_id]);
-    const rateForCheck = next.nightly_rate_paise ?? rtCur.base_rate_paise;
-    if (b.nightly_rate_paise !== undefined && b.nightly_rate_paise !== s.nightly_rate_paise) assertPerm(req, 'rates.override', 'You are not allowed to change the room rate');
-    const { extra } = await prepareStay(db, { ...req, perms: new Set([...req.perms, 'rates.override']) },
-      { ...next, nightly_rate_paise: rateForCheck }, id);
+    // Price: a typed rate (needs rates.override) fixes every night. Otherwise a new room type is priced from the
+    // rate calendar; new dates keep the nights already agreed and take calendar rates only for added nights.
+    const typeChanged = next.room_type_id !== s.room_type_id;
+    const datesChanged = next.check_in_date !== s.check_in_date || next.check_out_date !== s.check_out_date;
+    const rateTyped = b.nightly_rate_paise !== undefined && b.nightly_rate_paise !== s.nightly_rate_paise;
+    if (rateTyped) assertPerm(req, 'rates.override', 'You are not allowed to change the room rate');
+    const checked = await prepareStay(db, req, { ...next, nightly_rate_paise: undefined }, id);
+    let rateForCheck = s.nightly_rate_paise;
+    let nightly = s.nightly_rates;
+    if (rateTyped) {
+      rateForCheck = b.nightly_rate_paise; nightly = null;
+    } else if (typeChanged) {
+      rateForCheck = checked.rate; nightly = checked.nightly_rates;
+    } else if (datesChanged && s.nightly_rates) {
+      const fresh = (await quoteStay(db, req.hotelId, checked.rt, next.check_in_date, next.check_out_date)).nightly_rates;
+      nightly = Object.fromEntries(Object.keys(fresh).map((d) => [d, s.nightly_rates[d] ?? fresh[d]]));
+      const vals = Object.values(nightly);
+      rateForCheck = Math.round(vals.reduce((a, x) => a + x, 0) / vals.length);
+      if (flatRates(nightly)) nightly = null;
+    }
+    const extra = checked.extra;
     await db.query(
       `UPDATE stays SET room_type_id=$1, room_id=$2, check_in_date=$3, check_out_date=$4, adults=$5, children=$6,
-              nightly_rate_paise=$7, extra_person_paise=$8 WHERE id = $9`,
-      [next.room_type_id, next.room_id, next.check_in_date, next.check_out_date, next.adults, next.children, rateForCheck, extra, id]);
+              nightly_rate_paise=$7, extra_person_paise=$8, nightly_rates=$10 WHERE id = $9`,
+      [next.room_type_id, next.room_id, next.check_in_date, next.check_out_date, next.adults, next.children, rateForCheck, extra, id,
+        nightly ? JSON.stringify(nightly) : null]);
     // Room move while in house: old room needs cleaning
     if (s.status === 'checked_in' && s.room_id && next.room_id !== s.room_id) {
       await db.query(`UPDATE rooms SET hk_status = 'dirty' WHERE id = $1`, [s.room_id]);
@@ -394,8 +435,7 @@ export async function checkIn(req, stayId, opts) {
     let roomId = opts.room_id || s.room_id;
     if (!roomId) throw badRequest('Assign a room before check-in');
     if (opts.room_id && opts.room_id !== s.room_id) {
-      await prepareStay(db, { ...req, perms: new Set([...req.perms, 'rates.override']) },
-        { ...s, room_id: opts.room_id, nightly_rate_paise: s.nightly_rate_paise }, s.id);
+      await prepareStay(db, req, { ...s, room_id: opts.room_id }, s.id, { checkRate: false });
       await db.query('UPDATE stays SET room_id = $1 WHERE id = $2', [opts.room_id, s.id]);
     }
     const room = await db.one('SELECT * FROM rooms WHERE id = $1', [roomId]);

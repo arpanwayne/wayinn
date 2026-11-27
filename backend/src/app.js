@@ -21,6 +21,9 @@ import portal from './routes/portal.js';
 import platform from './routes/platform.js';
 import channel from './routes/channel.js';
 import documents from './routes/documents.js';
+import rates from './routes/rates.js';
+import rateguard from './routes/rateguard.js';
+import google from './routes/google.js';
 
 export function createApp() {
   const app = express();
@@ -40,7 +43,7 @@ export function createApp() {
   app.use('/api/platform/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10 }));
 
   const api = express.Router();
-  for (const r of [auth, platform, channel, portal, hotel, staff, rooms, guests, documents, bookings, folios, pos, operations, reports]) api.use(r);
+  for (const r of [auth, platform, channel, portal, google, hotel, staff, rooms, guests, documents, bookings, folios, pos, operations, reports, rates, rateguard]) api.use(r);
   app.use('/api', api);
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));

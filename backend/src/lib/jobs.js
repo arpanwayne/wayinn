@@ -3,6 +3,8 @@ import { many, tx } from '../db.js';
 import { postRoomNights } from './folio.js';
 import { hotelToday } from './dates.js';
 import { processOutbox } from './outbox.js';
+import { schedulerTick } from './rateguard/engine.js';
+import { googleTick } from './google/sync.js';
 
 async function autoNightAudit() {
   const hotels = await many(`SELECT * FROM hotels WHERE subscription_status IN ('trial','active','past_due')`);
@@ -26,8 +28,23 @@ async function autoNightAudit() {
   }
 }
 
+/** Run fn every `ms`, never two at once. */
+function every(ms, fn, name) {
+  let busy = false;
+  setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try { await fn(); } catch (e) { console.error(`${name} failed:`, e.message); } finally { busy = false; }
+  }, ms);
+}
+
 export function startJobs() {
   if (process.env.RUN_JOBS === 'false') return;
+  // Rate Guard: OTA price checks (each hotel's own schedule), suggestions and WhatsApp alerts.
+  if (process.env.RATE_GUARD_JOBS !== 'false') every(Number(process.env.RATE_GUARD_TICK_MIN || 10) * 60_000, () => schedulerTick(), 'rate guard');
+  // Google Hotels: hotels whose rates just changed every minute, everything (bookings, inventory) every 10 minutes.
+  every(60_000, () => googleTick(), 'google sync (changes)');
+  every(Number(process.env.GOOGLE_SYNC_MIN || 10) * 60_000, () => googleTick({ all: true }), 'google sync (all)');
   const every = Number(process.env.NIGHT_AUDIT_INTERVAL_MIN || 30) * 60 * 1000;
   setTimeout(() => autoNightAudit().catch(console.error), 10_000);
   setInterval(() => autoNightAudit().catch(console.error), every);

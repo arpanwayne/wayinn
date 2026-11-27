@@ -20,6 +20,7 @@ import { hotelToday, addDays, DATE_RE, nightsBetween, stayNights } from '../lib/
 import { availability, OTA_SOURCES } from './bookings.js';
 import { queueNotification } from '../lib/notify.js';
 import { voidUndeliveredCharges } from '../lib/folio.js';
+import { nightlyRates, quoteStay, flatRates } from '../lib/rates.js';
 
 const r = Router();
 const limiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -47,7 +48,10 @@ r.get('/channel/v1/room-types', async (req, res) => {
        FROM room_types rt WHERE hotel_id = $1 AND active ORDER BY base_rate_paise`, [req.hotelId]));
 });
 
-/** Rooms free per room type for each night in [from, to). Max 90 nights per call. */
+/**
+ * Rooms free per room type for each night in [from, to), with that night's rate (rate calendar), minimum stay
+ * and stop-sell, so the channel manager can push the same rates and restrictions to every OTA. Max 90 nights.
+ */
 r.get('/channel/v1/availability', async (req, res) => {
   const from = parse(date, req.query.from);
   const to = parse(date, req.query.to);
@@ -65,11 +69,23 @@ export async function dailyAvailability(hotelId, from, to) {
       WHERE s.hotel_id = $1 AND s.status IN ('reserved','checked_in') AND s.check_in_date < $3 AND s.check_out_date > $2
       GROUP BY 1, 2`, [hotelId, from, to]);
   const key = Object.fromEntries(booked.map((b) => [`${b.room_type_id}|${b.night}`, b.n]));
+  const grid = await nightlyRates({ many }, hotelId, from, to, types);
   return types.map((t) => ({
     room_type_id: t.id, name: t.name, rate_paise: t.base_rate_paise,
-    nights: stayNights(from, to).map((night) => ({ date: night, available: Math.max(0, t.total - (key[`${t.id}|${night}`] || 0)) })),
+    nights: grid.get(Number(t.id)).map((n) => ({
+      date: n.date, available: Math.max(0, t.total - (key[`${t.id}|${n.date}`] || 0)),
+      rate_paise: n.rate_paise, min_stay: n.min_stay || 1, stop_sell: n.stop_sell,
+    })),
   }));
 }
+
+/** Same nights as /availability, under the name channel managers look for. */
+r.get('/channel/v1/rates', async (req, res) => {
+  const from = parse(date, req.query.from);
+  const to = parse(date, req.query.to);
+  if (to <= from || nightsBetween(from, to) > 90) throw badRequest('Use a range of 1 to 90 nights');
+  res.json(await dailyAvailability(req.hotelId, from, to));
+});
 
 const bookingBody = z.object({
   channel: z.enum(OTA_SOURCES),
@@ -108,12 +124,20 @@ r.post('/channel/v1/bookings', async (req, res) => {
     let firstFolio = null;
     for (const room of b.rooms) {
       const rt = await db.one('SELECT * FROM room_types WHERE id = $1', [room.room_type_id]);
-      const rate = room.nightly_rate_paise ?? rt.base_rate_paise;
+      // The OTA's own price when it sends one (that is what the guest agreed to); otherwise the rate calendar.
+      let rate = room.nightly_rate_paise;
+      let nightly = null;
+      if (rate === undefined) {
+        const q = await quoteStay(db, req.hotelId, rt, b.check_in_date, b.check_out_date);
+        rate = q.avg_paise;
+        nightly = flatRates(q.nightly_rates) ? null : q.nightly_rates;
+      }
       const extra = Math.max(0, room.adults - rt.base_occupancy) * rt.extra_person_rate_paise;
       const s = await db.one(
-        `INSERT INTO stays (hotel_id, booking_id, guest_id, room_type_id, check_in_date, check_out_date, adults, children, nightly_rate_paise, extra_person_paise, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'reserved') RETURNING id`,
-        [req.hotelId, bk.id, g.id, rt.id, b.check_in_date, b.check_out_date, room.adults, room.children, rate, room.nightly_rate_paise !== undefined ? 0 : extra]);
+        `INSERT INTO stays (hotel_id, booking_id, guest_id, room_type_id, check_in_date, check_out_date, adults, children, nightly_rate_paise, extra_person_paise, status, nightly_rates)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'reserved',$11) RETURNING id`,
+        [req.hotelId, bk.id, g.id, rt.id, b.check_in_date, b.check_out_date, room.adults, room.children, rate, room.nightly_rate_paise !== undefined ? 0 : extra,
+          nightly ? JSON.stringify(nightly) : null]);
       const f = await db.one(`INSERT INTO folios (hotel_id, kind, stay_id, booking_id, guest_id) VALUES ($1,'stay',$2,$3,$4) RETURNING id`, [req.hotelId, s.id, bk.id, g.id]);
       firstFolio = firstFolio || f.id;
     }
@@ -247,7 +271,7 @@ export function icalFor(hotel, rt, nights) {
   // Merge consecutive sold-out nights into one event.
   const blocks = [];
   for (const n of nights) {
-    if (n.available > 0) continue;
+    if (n.available > 0 && !n.stop_sell) continue;
     const last = blocks[blocks.length - 1];
     if (last && last.end === n.date) last.end = addDays(n.date, 1);
     else blocks.push({ start: n.date, end: addDays(n.date, 1) });

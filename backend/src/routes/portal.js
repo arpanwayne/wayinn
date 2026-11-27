@@ -206,8 +206,12 @@ r.get('/public/hotels/:slug/availability', publicLimiter, async (req, res) => {
   const to = parse(z.string().regex(DATE_RE), req.query.to);
   if (to <= from || from < hotelToday(h.timezone)) throw badRequest('Choose valid future dates');
   const a = await availability({ many }, h.id, from, to);
-  // Public view: counts only, never specific rooms
-  res.json(a.map(({ id, name, base_rate_paise, max_occupancy, available }) => ({ id, name, base_rate_paise, max_occupancy, available: Math.min(available, 5) })));
+  // Public view: counts only, never specific rooms. Prices come from the rate calendar for these dates;
+  // a room type closed for these dates (stop-sell, minimum stay) shows as not available, with the reason.
+  res.json(a.map(({ id, name, base_rate_paise, max_occupancy, available, rate_paise, stay_total_paise, rates_vary, nightly, closed_reason }) => ({
+    id, name, base_rate_paise, rate_paise, stay_total_paise, rates_vary, nightly, max_occupancy,
+    available: closed_reason ? 0 : Math.min(available, 5), closed_reason,
+  })));
 });
 
 r.post('/public/hotels/:slug/booking-requests', rateLimit({ windowMs: 60 * 60 * 1000, limit: 10 }), async (req, res) => {
@@ -218,30 +222,35 @@ r.post('/public/hotels/:slug/booking-requests', rateLimit({ windowMs: 60 * 60 * 
     check_in_date: z.string().regex(DATE_RE), check_out_date: z.string().regex(DATE_RE),
     adults: z.number().int().min(1).default(2), children: z.number().int().min(0).default(0),
     special_requests: z.string().max(500).optional().nullable(),
+    src: z.enum(['google']).optional().nullable(), // arrived from Google Hotels (landing page link)
   }), req.body);
   if (b.check_out_date <= b.check_in_date || b.check_in_date < hotelToday(h.timezone)) throw badRequest('Choose valid dates');
   if (nightsBetween(b.check_in_date, b.check_out_date) > 30) throw badRequest('For stays over 30 nights please call the hotel');
   const rt = await one('SELECT * FROM room_types WHERE id = $1 AND hotel_id = $2 AND active', [b.room_type_id, h.id]);
   if (!rt) throw badRequest('Unknown room type');
   const avail = (await availability({ many }, h.id, b.check_in_date, b.check_out_date)).find((x) => x.id === rt.id);
+  if (avail?.closed_reason) throw conflict(`${rt.name}: ${avail.closed_reason}. Please choose other dates.`);
   if (!avail || avail.available < b.rooms) throw conflict('Not enough rooms available for these dates');
+  const nightly = Object.fromEntries(avail.nightly.map((n) => [n.date, n.rate_paise]));
+  const varies = avail.rates_vary;
   const booking = await tx(async (db) => {
     let g = await db.one(`SELECT id FROM guests WHERE hotel_id = $1 AND phone = $2 ORDER BY id DESC LIMIT 1`, [h.id, b.phone]);
     if (!g) g = await db.one(`INSERT INTO guests (hotel_id, full_name, phone, email) VALUES ($1,$2,$3,$4) RETURNING id`, [h.id, b.full_name, b.phone, b.email || null]);
     const ref = await nextBookingRef(db, h.id);
     const bk = await db.one(
-      `INSERT INTO bookings (hotel_id, ref, guest_id, source, status, special_requests) VALUES ($1,$2,$3,'direct_online','requested',$4) RETURNING *`,
-      [h.id, ref, g.id, b.special_requests || null]);
+      `INSERT INTO bookings (hotel_id, ref, guest_id, source, status, special_requests) VALUES ($1,$2,$3,$4,'requested',$5) RETURNING *`,
+      [h.id, ref, g.id, b.src === 'google' ? 'google' : 'direct_online', b.special_requests || null]);
     const perRoomAdults = Math.max(1, Math.ceil(b.adults / b.rooms));
     for (let i = 0; i < b.rooms; i++) {
       const extra = Math.max(0, perRoomAdults - rt.base_occupancy) * rt.extra_person_rate_paise;
       const s = await db.one(
-        `INSERT INTO stays (hotel_id, booking_id, guest_id, room_type_id, check_in_date, check_out_date, adults, children, nightly_rate_paise, extra_person_paise, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'tentative') RETURNING id`,
-        [h.id, bk.id, g.id, rt.id, b.check_in_date, b.check_out_date, perRoomAdults, i === 0 ? b.children : 0, rt.base_rate_paise, extra]);
+        `INSERT INTO stays (hotel_id, booking_id, guest_id, room_type_id, check_in_date, check_out_date, adults, children, nightly_rate_paise, extra_person_paise, status, nightly_rates)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'tentative',$11) RETURNING id`,
+        [h.id, bk.id, g.id, rt.id, b.check_in_date, b.check_out_date, perRoomAdults, i === 0 ? b.children : 0, avail.rate_paise, extra,
+          varies ? JSON.stringify(nightly) : null]);
       await db.query(`INSERT INTO folios (hotel_id, kind, stay_id, booking_id, guest_id) VALUES ($1,'stay',$2,$3,$4)`, [h.id, s.id, bk.id, g.id]);
     }
-    await audit({ hotelId: h.id, ip: req.ip }, 'booking.requested_online', 'booking', bk.id, { ref, rooms: b.rooms }, db);
+    await audit({ hotelId: h.id, ip: req.ip }, 'booking.requested_online', 'booking', bk.id, { ref, rooms: b.rooms, src: b.src || null }, db);
     return bk;
   });
 
@@ -249,7 +258,7 @@ r.post('/public/hotels/:slug/booking-requests', rateLimit({ windowMs: 60 * 60 * 
   const pay = await onlinePaymentSetting(h);
   if (pay) {
     const perRoomAdults = Math.max(1, Math.ceil(b.adults / b.rooms));
-    const est = stayEstimate(h, { nightly_rate_paise: rt.base_rate_paise, extra_person_paise: Math.max(0, perRoomAdults - rt.base_occupancy) * rt.extra_person_rate_paise,
+    const est = stayEstimate(h, { nightly_rate_paise: avail.rate_paise, nightly_rates: nightly, extra_person_paise: Math.max(0, perRoomAdults - rt.base_occupancy) * rt.extra_person_rate_paise,
       check_in_date: b.check_in_date, check_out_date: b.check_out_date, rooms: b.rooms });
     const amount = depositAmount(pay, est);
     if (amount > 0) {

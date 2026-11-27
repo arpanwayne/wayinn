@@ -59,6 +59,18 @@ export async function queueTeamAlert(hotelId, team, template, payload) {
   }
 }
 
+/** Staff message to specific numbers (e.g. Rate Guard alerts to the owner). WhatsApp only. Returns how many were queued. */
+export async function queueToPhones(hotelId, phones, template, payload) {
+  try {
+    const list = [...new Set((phones || []).map(normalizePhone).filter(Boolean))];
+    for (const p of list) await insert(hotelId, 'whatsapp', p, template, payload, 'staff');
+    return list.length;
+  } catch (e) {
+    console.error('queueToPhones failed', e.message);
+    return 0;
+  }
+}
+
 async function hotelChannels(hotelId) {
   const { rows } = await query('SELECT settings FROM hotels WHERE id = $1', [hotelId]);
   return rows[0]?.settings?.notifications || {};
