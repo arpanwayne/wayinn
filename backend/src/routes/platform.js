@@ -12,6 +12,8 @@ import { loadIntegrations, maskedIntegrations, saveIntegrations, whatsappReady }
 import { sendWhatsAppHello } from '../lib/providers.js';
 import { normalizePhone } from '../lib/messages.js';
 import { config } from '../config.js';
+import { loadGoogle } from '../lib/google/sync.js';
+import { landingTemplate } from './google.js';
 
 const r = Router();
 r.use('/platform', (req, res, next) => (req.path.startsWith('/auth/') ? next() : requirePlatform(req, res, next)));
@@ -62,6 +64,7 @@ r.delete('/platform/plans/:id', async (req, res) => {
 r.get('/platform/hotels', async (_req, res) => {
   res.json(await many(
     `SELECT h.id, h.name, h.slug, h.city, h.phone, h.email, h.subscription_status, h.trial_ends_at, h.created_at, p.name AS plan, p.max_rooms,
+            COALESCE((h.settings->'addons'->>'rate_guard')::boolean, false) AS rate_guard,
             (SELECT count(*)::int FROM rooms r WHERE r.hotel_id = h.id AND r.active) AS rooms,
             (SELECT count(*)::int FROM users u WHERE u.hotel_id = h.id AND u.active) AS staff,
             (SELECT max(created_at) FROM audit_logs a WHERE a.hotel_id = h.id) AS last_activity
@@ -119,6 +122,48 @@ r.patch('/platform/hotels/:id', async (req, res) => {
     [...keys.map((k) => b[k]), id]);
   if (!row) throw notFound();
   await audit({ ...req, hotelId: id }, 'platform.hotel_updated', 'hotel', id, { ...b, by: req.admin.email });
+  res.json(row);
+});
+
+// Paid add-ons for one hotel. Rate Guard (OTA price monitor + Google Hotels) costs us price data, so it is
+// switched on here and not by the hotel itself.
+r.patch('/platform/hotels/:id/addons', async (req, res) => {
+  const id = idParam(req.params.id);
+  const b = parse(z.object({ rate_guard: z.boolean() }), req.body);
+  const row = await one(
+    `UPDATE hotels SET settings = jsonb_set(settings, '{addons}', COALESCE(settings->'addons', '{}'::jsonb) || $2::jsonb) WHERE id = $1 RETURNING id, settings`,
+    [id, JSON.stringify(b)]);
+  if (!row) throw notFound();
+  if (!b.rate_guard) await one(`UPDATE rate_guard_config SET enabled = false WHERE hotel_id = $1 RETURNING hotel_id`, [id]);
+  await audit({ ...req, hotelId: id }, 'platform.addons_updated', 'hotel', id, { ...b, by: req.admin.email });
+  res.json({ id, addons: row.settings.addons });
+});
+
+// Google Hotels (Wayne E Solutions is the connectivity partner). The hotel owner fills in the details; we move
+// the hotel from draft → testing (Google's pre-launch checks) → live, or pause it.
+r.get('/platform/google', async (_req, res) => {
+  const token = process.env.GOOGLE_FEED_TOKEN;
+  const base = config.publicAppUrl.replace(/\/$/, '');
+  res.json({
+    partner_key_set: !!process.env.GOOGLE_HOTEL_PARTNER_KEY,
+    hotel_list_feed: token ? `${base}/api/google/hotel-list.xml?token=${token}` : null,
+    landing_template: landingTemplate(),
+    serpapi_key_set: !!process.env.SERPAPI_KEY,
+    hotels: await many(
+      `SELECT h.id, h.name, h.slug, (h.settings->'addons'->>'rate_guard')::boolean AS rate_guard, g.property_id, g.enabled, g.status, g.last_sync_at, g.last_error,
+              g.latitude IS NOT NULL AS has_location, c.enabled AS rate_guard_on, c.provider, c.property_name
+         FROM hotels h LEFT JOIN google_hotels g ON g.hotel_id = h.id LEFT JOIN rate_guard_config c ON c.hotel_id = h.id
+        ORDER BY h.name`),
+  });
+});
+
+r.patch('/platform/hotels/:id/google', async (req, res) => {
+  const id = idParam(req.params.id);
+  const b = parse(z.object({ status: z.enum(['draft', 'testing', 'live', 'paused']) }), req.body);
+  await loadGoogle(id);
+  const row = await one(`UPDATE google_hotels SET status = $2, updated_at = now() WHERE hotel_id = $1 RETURNING *`, [id, b.status]);
+  if (!row) throw notFound();
+  await audit({ ...req, hotelId: id }, 'platform.google_status', 'hotel', id, { ...b, by: req.admin.email });
   res.json(row);
 });
 

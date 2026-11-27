@@ -40,6 +40,16 @@ export const TEMPLATES = {
     params: (p) => [p.title, p.room, p.hotel, p.priority, p.id],
     text: 'Maintenance: {{1}} in {{2}} at {{3}}. Priority: {{4}}. Reply FIXED {{5}} when resolved.',
   },
+  rate_alert: {
+    audience: 'staff', subject: (p) => `Rate Guard: ${p.ota} ${p.ota_rate} for ${fmt(p.date)}`,
+    params: (p) => [p.hotel, p.ota, p.ota_rate, p.room_type, fmt(p.date), p.suggested, p.code],
+    text: 'Rate Guard, {{1}}: {{2}} now shows {{3}} for {{4}} on {{5}}. Suggested direct rate {{6}} + GST. Reply YES {{7}} to approve or NO {{7}} to skip.',
+  },
+  rate_alert_summary: {
+    audience: 'staff', subject: (p) => `Rate Guard: ${p.count} new rate suggestions`,
+    params: (p) => [p.hotel, p.count, fmt(p.from), fmt(p.to)],
+    text: 'Rate Guard, {{1}}: {{2}} new rate suggestions for {{3}} to {{4}}. Open Wayinn, Rates, Rate Guard to review them, or reply YES ALL to approve all.',
+  },
   room_checkout_alert: {
     audience: 'staff', subject: (p) => `Room ${p.room} checked out`,
     params: (p) => [p.room, p.hotel, p.note],

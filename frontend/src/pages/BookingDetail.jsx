@@ -131,7 +131,7 @@ export default function BookingDetail() {
                 <td>{s.guest_name}</td>
                 <td className="whitespace-nowrap">{fmtDate(s.check_in_date)} → {fmtDate(s.check_out_date)}</td>
                 <td>{s.adults}{s.children ? `+${s.children}` : ''}</td>
-                <td className="tabular-nums">{rupees(s.nightly_rate_paise, { decimals: 0 })}{s.extra_person_paise > 0 && <div className="text-xs text-ink-500">+{rupees(s.extra_person_paise, { decimals: 0 })} extra</div>}</td>
+                <td className="tabular-nums" title={s.nightly_rates ? Object.entries(s.nightly_rates).map(([d, p]) => `${fmtDate(d)}: ${rupees(p, { decimals: 0 })}`).join('\n') : undefined}>{rupees(s.nightly_rate_paise, { decimals: 0 })}{s.nightly_rates && <div className="text-xs text-ink-500">avg · varies by night</div>}{s.extra_person_paise > 0 && <div className="text-xs text-ink-500">+{rupees(s.extra_person_paise, { decimals: 0 })} extra</div>}</td>
                 <td className="whitespace-nowrap tabular-nums">
                   {s.folio_totals && <BillCell stay={s} t={s.folio_totals} />}
                 </td>

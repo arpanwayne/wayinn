@@ -26,6 +26,7 @@ import InvoicePrint from './pages/InvoicePrint.jsx';
 import GuestPortal from './pages/GuestPortal.jsx';
 import PublicBooking from './pages/PublicBooking.jsx';
 import Platform from './pages/Platform.jsx';
+import Rates from './pages/Rates.jsx';
 
 function Protected({ children }) {
   const { loading, user } = useAuth();
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="requests" element={<Requests />} />
         <Route path="reports" element={<Reports />} />
         <Route path="staff" element={<Staff />} />
+        <Route path="rates" element={<Rates />} />
         <Route path="settings" element={<Settings />} />
         <Route path="activity" element={<Activity />} />
       </Route>

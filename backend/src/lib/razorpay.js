@@ -1,16 +1,20 @@
 // Razorpay advance payments on the public booking page. Each hotel uses its own Razorpay account.
 import { roomTaxRate, taxOn } from './money.js';
-import { nightsBetween } from './dates.js';
+import { stayNights } from './dates.js';
 import { hmacHex, safeEqual } from './integrations.js';
 import { availability } from '../routes/bookings.js';
 import { badRequest } from './errors.js';
 
-/** Total for a booking request: room nights + GST, for all rooms. */
-export function stayEstimate(hotel, { nightly_rate_paise, extra_person_paise = 0, check_in_date, check_out_date, rooms = 1 }) {
-  const tariff = Number(nightly_rate_paise) + Number(extra_person_paise);
-  const nights = nightsBetween(check_in_date, check_out_date);
-  const perNight = tariff + taxOn(tariff, roomTaxRate(hotel, tariff));
-  return { nights, first_night_paise: perNight * rooms, total_paise: perNight * nights * rooms };
+/**
+ * Total for a booking request: room nights + GST, for all rooms. `nightly_rates` ({date: paise}) gives a rate per
+ * night (rate calendar); without it every night costs nightly_rate_paise. GST follows each night's tariff.
+ */
+export function stayEstimate(hotel, { nightly_rate_paise, nightly_rates = null, extra_person_paise = 0, check_in_date, check_out_date, rooms = 1 }) {
+  const list = stayNights(check_in_date, check_out_date).map((d) => {
+    const tariff = Number(nightly_rates?.[d] ?? nightly_rate_paise) + Number(extra_person_paise);
+    return tariff + taxOn(tariff, roomTaxRate(hotel, tariff));
+  });
+  return { nights: list.length, first_night_paise: (list[0] || 0) * rooms, total_paise: list.reduce((a, x) => a + x, 0) * rooms };
 }
 
 /** How much to collect now, from the owner's setting. 0 = no online payment. */

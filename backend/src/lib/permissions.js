@@ -7,6 +7,7 @@ export const PERMISSIONS = {
   'rooms.manage': 'Set up room types, rooms and rates',
   'rooms.status': 'Update room housekeeping status',
   'rates.override': 'Change the nightly rate on a booking',
+  'rates.manage': 'Rate calendar (date-wise rates, minimum stay, stop-sell), Rate Guard and Google Hotels',
   'bookings.view': 'View reservations and calendar',
   'bookings.create': 'Create reservations',
   'bookings.modify': 'Modify dates, rooms and details of reservations',

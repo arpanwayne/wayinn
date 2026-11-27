@@ -45,9 +45,10 @@ export default function BookingNew() {
   const lineTotal = (l) => {
     const t = typeById[String(l.room_type_id)];
     if (!t) return 0;
-    const rate = l.rate !== '' ? toPaise(l.rate) : t.base_rate_paise;
+    // Typed rate × nights, otherwise the rate calendar's price for these exact nights.
+    const rooms = l.rate !== '' ? toPaise(l.rate) * n : (t.stay_total_paise ?? t.base_rate_paise * n);
     const extra = Math.max(0, l.adults - t.base_occupancy) * t.extra_person_rate_paise;
-    return (rate + extra) * n;
+    return rooms + extra * n;
   };
   const total = lines.reduce((a, l) => a + lineTotal(l), 0);
   // Keep adults + children within the room type's capacity as the user types, so the form can never hold a count the server will refuse.
@@ -112,7 +113,7 @@ export default function BookingNew() {
                     <Field label="Room type" className="col-span-2">
                       <select className="input" required value={l.room_type_id} onChange={(e) => setLine(i, { room_type_id: e.target.value, room_id: '', rate: '' })}>
                         <option value="">Select</option>
-                        {avail.map((a) => <option key={a.id} value={a.id} disabled={!a.available}>{a.name} · {rupees(a.base_rate_paise, { decimals: 0 })} · {a.available} left</option>)}
+                        {avail.map((a) => <option key={a.id} value={a.id} disabled={!a.available}>{a.name} · {rupees(a.rate_paise ?? a.base_rate_paise, { decimals: 0 })}{a.rates_vary ? ' avg' : ''} · {a.available} left{a.closed_reason ? ' · closed online' : ''}</option>)}
                       </select>
                     </Field>
                     <Field label="Room">
@@ -123,11 +124,15 @@ export default function BookingNew() {
                     </Field>
                     <Field label="Adults" hint={t ? `Max ${t.max_occupancy} guests` : null}><input type="number" min={1} max={t?.max_occupancy || 6} className="input" value={l.adults} onChange={(e) => setLine(i, { adults: e.target.value })} /></Field>
                     <Field label="Children"><input type="number" min={0} max={t ? Math.max(0, t.max_occupancy - (Number(l.adults) || 1)) : undefined} className="input" value={l.children} onChange={(e) => setLine(i, { children: e.target.value })} /></Field>
-                    <Field label="Rate/night ₹" hint={t && !can('rates.override') ? 'Fixed rate' : null}>
-                      <input className="input" inputMode="decimal" disabled={!can('rates.override')} placeholder={t ? String(t.base_rate_paise / 100) : ''} value={l.rate} onChange={(e) => setLine(i, { rate: e.target.value })} />
+                    <Field label="Rate/night ₹" hint={t?.rates_vary ? 'Varies by date (rate calendar)' : t && !can('rates.override') ? 'From the rate calendar' : null}>
+                      <input className="input" inputMode="decimal" disabled={!can('rates.override')} placeholder={t ? String(Math.round((t.rate_paise ?? t.base_rate_paise) / 100)) : ''} value={l.rate} onChange={(e) => setLine(i, { rate: e.target.value })} />
                     </Field>
                     <div className="col-span-2 flex items-center justify-between text-sm sm:col-span-6">
-                      <span className="text-ink-500">{t && l.adults > t.base_occupancy ? `Includes extra person ${rupees(t.extra_person_rate_paise, { decimals: 0 })}/night` : ''}</span>
+                      <span className="text-ink-500">
+                        {t && l.adults > t.base_occupancy ? `Includes extra person ${rupees(t.extra_person_rate_paise, { decimals: 0 })}/night. ` : ''}
+                        {t?.rates_vary && l.rate === '' ? `Nights: ${t.nightly.map((x) => rupees(x.rate_paise, { decimals: 0 })).join(' + ')}. ` : ''}
+                        {t?.closed_reason ? <span className="text-amber-600">{t.closed_reason} online.</span> : ''}
+                      </span>
                       <span className="flex items-center gap-3"><span className="font-semibold">{rupees(lineTotal(l))}</span>
                         {lines.length > 1 && <button type="button" className="btn-ghost btn-sm text-red-600" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</button>}</span>
                     </div>

@@ -67,6 +67,41 @@ Tests (end-to-end against a real database, after migrate + seed): `cd backend &&
 - **Guest ID documents on WhatsApp** and **housekeeping / maintenance on WhatsApp**: see "WhatsApp: guest documents and staff replies" below.
 - **Messages (WhatsApp / SMS / email)**: see "Messages, payments and OTAs" below.
 
+## Rates, Rate Guard and Google Hotels
+
+**Rate calendar** (Rates → Rate calendar, owner: `rates.manage`). Every room type can have its own rate, minimum stay (on arrival) and stop-sell per date; a date without a row uses the base rate. The front desk, the booking page (`/book/:slug`), the channel-manager API (`GET /channel/v1/availability` and `/channel/v1/rates` now return `rate_paise`, `min_stay`, `stop_sell` per night), iCal (stop-sell nights are blocked) and Google all read it. A booking keeps its night-by-night rates in `stays.nightly_rates`; the night audit bills each night at its own rate and GST slab. Extending a stay keeps the agreed nights and prices only the new ones. Every change goes to `rate_changes` (Rates → History) and the latest change of a day can be undone.
+
+**Rate Guard** (paid add-on: super admin → *Rate Guard & Google* → tick the hotel). Watches OTA prices for the hotel on Google Hotels and suggests a direct rate:
+
+`cheapest matching OTA price before GST × (1 − 5%)` → rounded to ₹…49/₹…99 → kept between the room type's floor and ceiling.
+
+- Data source is pluggable (`backend/src/lib/rateguard/providers/`): `serpapi` (needs `SERPAPI_KEY`), `manual` (owner types OTA prices) and `mock` (demo, hidden in production unless `RATE_GUARD_ALLOW_MOCK=true`). A new provider is one file with `search()` and `fetchOffers()`.
+- Schedule (per hotel, editable): next 7 days every 3 hours, the rest of 30 days once a day. The scheduler runs inside the API every `RATE_GUARD_TICK_MIN` (10) minutes; `RATE_GUARD_JOBS=false` turns it off.
+- Room mapping: which OTA room names match each room type (empty = the cheapest room, except rooms that match another type), meal plan, refundable.
+- Approve mode: WhatsApp alert to the owner's numbers; reply `YES K7P2` / `NO K7P2` (also `haan`, `ok`, `nahi`, `skip`) or `YES ALL`. Only the numbers set in Rate Guard can approve. More suggestions than "separate messages up to" in one check → one summary message. Approvals also work on the dashboard.
+- Auto mode: a change within ±15% (editable) of the day's starting rate is applied straight away and logged; bigger changes wait for approval.
+- Monthly report (Rates → History): direct vs OTA bookings and the OTA commission saved.
+
+Create these **Utility** WhatsApp templates (language `en`):
+
+| Template | Text |
+|---|---|
+| `rate_alert` | Rate Guard, {{1}}: {{2}} now shows {{3}} for {{4}} on {{5}}. Suggested direct rate {{6}} + GST. Reply YES {{7}} to approve or NO {{7}} to skip. |
+| `rate_alert_summary` | Rate Guard, {{1}}: {{2}} new rate suggestions for {{3}} to {{4}}. Open Wayinn, Rates, Rate Guard to review them, or reply YES ALL to approve all. |
+
+**Google Hotels** (comes with the add-on). Wayne E Solutions is the connectivity partner with one Hotel Center account; each hotel gets a permanent Hotel ID `WAYINN<id>`.
+
+| Env | What |
+|---|---|
+| `GOOGLE_HOTEL_PARTNER_KEY` | Partner key from Hotel Center → Account settings. Without it nothing is sent (dry run). |
+| `GOOGLE_FEED_TOKEN` | Secret in the hotel list feed URL: `https://<domain>/api/google/hotel-list.xml?token=…` (Hotel Center → Hotel list pull). |
+| `GOOGLE_SYNC_MIN` | Full sync interval, default 10 minutes. |
+
+- Hotel Center → Landing pages: `https://<domain>/api/google/landing?hotel=(PARTNER-HOTEL-ID)&checkin=(CHECKINYEAR)-(CHECKINMONTH)-(CHECKINDAY)&nights=(LENGTH)&room=(PARTNER-ROOM-ID)`. It redirects to the booking page with dates and room chosen; those bookings get source **Google Hotels**.
+- Hotel Center → push IP allowlist: add the API server's public IP (ARI pushes are authenticated by IP).
+- Messages: Transaction (property data: room types + one `BAR` package) to `/property_data`, then `OTA_HotelRateAmountNotifRQ`, `OTA_HotelAvailNotifRQ` (stop-sell, min stay) and `OTA_HotelInvCountNotifRQ` (rooms left). Only changes are sent (`google_ari_state`); a rate change goes out within a minute, bookings within 10 minutes.
+- Per hotel the owner fills in Rates → Google Hotels (map location, PIN code, cancellation terms) and ticks *Show my hotel on Google*. The super admin moves it draft → testing (Google's pre-launch price checks) → live, or paused.
+
 ## Deploy (EC2, same pattern as our other products)
 
 ```bash
