@@ -23,7 +23,7 @@ export const label = (s) => (s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) =>
 export const plural = (n, one, many = `${one}s`) => `${n} ${Number(n) === 1 ? one : many}`;
 
 // Booking sources, including the OTAs (bookings pushed by a channel manager carry the OTA's name).
-export const SOURCES = [['walk_in', 'Walk-in'], ['phone', 'Phone'], ['direct_online', 'Website'], ['makemytrip', 'MakeMyTrip'], ['goibibo', 'Goibibo'],
+export const SOURCES = [['walk_in', 'Walk-in'], ['phone', 'Phone'], ['direct_online', 'Website'], ['google', 'Google Hotels'], ['makemytrip', 'MakeMyTrip'], ['goibibo', 'Goibibo'],
   ['oyo', 'OYO'], ['booking_com', 'Booking.com'], ['agoda', 'Agoda'], ['airbnb', 'Airbnb'], ['expedia', 'Expedia'], ['ota', 'Other OTA'],
   ['channel_manager', 'Channel manager'], ['corporate', 'Corporate'], ['staff', 'Staff'], ['other', 'Other']];
 const SOURCE_NAMES = Object.fromEntries(SOURCES);

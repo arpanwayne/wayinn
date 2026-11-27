@@ -29,6 +29,47 @@ function PlatformLogin({ onDone }) {
   );
 }
 
+// Rate Guard add-on per hotel (price data costs us money) and each hotel's Google Hotels status.
+function RateGuardAdmin() {
+  const [d, setD] = useState(null);
+  const [run, busy] = useAction();
+  const load = () => api.get('/platform/google', P).then(setD).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!d) return <Loading />;
+  return (
+    <div className="space-y-4">
+      <div className="card grid gap-2 p-4 text-sm sm:grid-cols-2">
+        <div>Google partner key (GOOGLE_HOTEL_PARTNER_KEY): <Badge status={d.partner_key_set ? 'active' : 'cancelled'}>{d.partner_key_set ? 'Set' : 'Not set'}</Badge></div>
+        <div>SerpApi key (SERPAPI_KEY): <Badge status={d.serpapi_key_set ? 'active' : 'cancelled'}>{d.serpapi_key_set ? 'Set' : 'Not set'}</Badge></div>
+        <div className="sm:col-span-2"><span className="text-ink-500">Hotel list feed for Hotel Center:</span> {d.hotel_list_feed ? <code className="break-all text-xs">{d.hotel_list_feed}</code> : <span className="text-amber-600">set GOOGLE_FEED_TOKEN on the server</span>}</div>
+        <div className="sm:col-span-2"><span className="text-ink-500">Landing page template:</span> <code className="break-all text-xs">{d.landing_template}</code></div>
+      </div>
+      <div className="card overflow-x-auto">
+        <table className="table">
+          <thead><tr><th>Hotel</th><th>Rate Guard add-on</th><th>Rate Guard</th><th>Google Hotel ID</th><th>Google status</th><th>Last sent</th></tr></thead>
+          <tbody>{d.hotels.map((h) => (
+            <tr key={h.id}>
+              <td className="font-semibold">{h.name}<div className="text-xs font-normal text-ink-500">{h.slug}</div></td>
+              <td><label className="flex items-center gap-2"><input type="checkbox" disabled={busy} checked={!!h.rate_guard}
+                onChange={(e) => run(async () => { await api.patch(`/platform/hotels/${h.id}/addons`, { rate_guard: e.target.checked }, P); load(); }, e.target.checked ? 'Add-on on' : 'Add-on off')} /> {h.rate_guard ? 'On' : 'Off'}</label></td>
+              <td>{h.rate_guard_on ? <>On · {h.provider}<div className="text-xs text-ink-500">{h.property_name || 'not linked'}</div></> : <span className="text-ink-400">Off</span>}</td>
+              <td>{h.property_id || <span className="text-ink-400">—</span>}{h.property_id && !h.has_location && <div className="text-xs text-amber-600">no map location</div>}</td>
+              <td>
+                <select className="input w-auto py-1 text-xs" disabled={busy || !h.rate_guard} value={h.status || 'draft'}
+                  onChange={(e) => run(async () => { await api.patch(`/platform/hotels/${h.id}/google`, { status: e.target.value }, P); load(); }, 'Google status updated')}>
+                  {['draft', 'testing', 'live', 'paused'].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {h.status && !h.enabled && <div className="text-xs text-ink-500">hotel has not switched it on</div>}
+              </td>
+              <td className="text-xs">{h.last_sync_at ? fmtDateTime(h.last_sync_at) : '—'}{h.last_error && <div className="text-red-600">{h.last_error}</div>}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Platform() {
   const { loginWithToken } = useAuth();
   const [authed, setAuthed] = useState(!!store.get('wayinn.platform'));
@@ -70,7 +111,8 @@ export default function Platform() {
           <Stat label="At risk" value={stats.at_risk} tone={stats.at_risk ? 'bad' : 'default'} /><Stat label="Rooms" value={stats.rooms} />
           <Stat label="Guests in house" value={stats.guests_in_house} /><Stat label="MRR" value={rupees0(stats.mrr_paise)} tone="good" />
         </div>}
-        <Tabs tabs={[['hotels', 'Hotels'], ['plans', 'Plans']]} value={tab} onChange={setTab} />
+        <Tabs tabs={[['hotels', 'Hotels'], ['plans', 'Plans'], ['rateguard', 'Rate Guard & Google']]} value={tab} onChange={setTab} />
+        {tab === 'rateguard' && <RateGuardAdmin />}
         {tab === 'hotels' && (
           <div className="card overflow-x-auto">
             <div className="flex justify-end p-3"><button className="btn-primary" onClick={() => setForm({ name: '', slug: '', city: '', phone: '', email: '', gstin: '', plan_id: plans.find((p) => p.active)?.id || '', trial_days: 14, owner: { name: '', email: '', phone: '', password: '' } })}>+ Onboard hotel</button></div>

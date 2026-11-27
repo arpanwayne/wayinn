@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { rupees0, todayStr, addDays, nights } from '../lib/format.js';
 import { Logo } from '../components/Layout.jsx';
@@ -20,6 +20,10 @@ const DEPOSIT_TEXT = { first_night: 'the first night', full: 'the full stay', pe
 
 export default function PublicBooking() {
   const { slug } = useParams();
+  // Links from Google Hotels arrive with ?checkin=&checkout=&room=&src=google (see /api/google/landing).
+  const [query] = useSearchParams();
+  const src = query.get('src') === 'google' ? 'google' : null;
+  const wantRoom = query.get('room');
   const [hotel, setHotel] = useState(null);
   const [err, setErr] = useState('');
   const [from, setFrom] = useState(todayStr());
@@ -48,18 +52,30 @@ export default function PublicBooking() {
     rz.open();
   };
 
-  useEffect(() => { api.get(`/public/hotels/${slug}`, opt).then((h) => { setHotel(h); setFrom(h.today); setTo(addDays(h.today, 1)); }).catch((e) => setErr(e.message)); }, [slug]); // eslint-disable-line
+  useEffect(() => {
+    api.get(`/public/hotels/${slug}`, opt).then((h) => {
+      const re = /^\d{4}-\d{2}-\d{2}$/;
+      const ci = query.get('checkin');
+      const co = query.get('checkout');
+      const start = re.test(ci || '') && ci >= h.today ? ci : h.today;
+      setHotel(h); setFrom(start); setTo(re.test(co || '') && co > start ? co : addDays(start, 1));
+    }).catch((e) => setErr(e.message));
+  }, [slug]); // eslint-disable-line
   useEffect(() => {
     if (!hotel || to <= from) return;
     setAvail(null);
-    api.get(`/public/hotels/${slug}/availability?from=${from}&to=${to}`, opt).then(setAvail).catch((e) => setErr(e.message));
+    api.get(`/public/hotels/${slug}/availability?from=${from}&to=${to}`, opt).then((a) => {
+      setAvail(a);
+      // Keep the chosen room type when it is still bookable for the new dates; pick the one Google sent the guest for.
+      setSel((cur) => a.find((x) => x.id === (cur?.id ?? Number(wantRoom)) && x.available) || null);
+    }).catch((e) => setErr(e.message));
   }, [hotel, from, to]); // eslint-disable-line
 
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr('');
     try {
       const r = await api.post(`/public/hotels/${slug}/booking-requests`, { ...form, adults: Number(form.adults), children: Number(form.children), rooms: Number(form.rooms),
-        room_type_id: sel.id, check_in_date: from, check_out_date: to, email: form.email || null }, opt);
+        room_type_id: sel.id, check_in_date: from, check_out_date: to, email: form.email || null, src }, opt);
       setDone(r);
       if (r.payment) pay(r);
     } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
@@ -108,17 +124,18 @@ export default function PublicBooking() {
                 const t = types[a.id];
                 return (
                   <button key={a.id} disabled={!a.available} onClick={() => setSel(a)} className={`card p-4 text-left transition ${sel?.id === a.id ? 'ring-2 ring-night-900' : ''} disabled:opacity-50`}>
-                    <div className="flex items-start justify-between"><div className="font-display text-lg font-bold">{a.name}</div><div className="text-right"><div className="font-bold">{rupees0(a.base_rate_paise)}</div><div className="text-xs text-ink-500">per night + GST</div></div></div>
+                    <div className="flex items-start justify-between"><div className="font-display text-lg font-bold">{a.name}</div><div className="text-right"><div className="font-bold">{rupees0(a.rate_paise ?? a.base_rate_paise)}</div><div className="text-xs text-ink-500">{a.rates_vary ? 'avg per night' : 'per night'} + GST</div>
+                      {n > 1 && <div className="text-xs text-ink-500">{rupees0(a.stay_total_paise)} for {n} nights</div>}</div></div>
                     {t?.description && <p className="mt-1 text-sm text-ink-600">{t.description}</p>}
                     <div className="mt-2 text-xs text-ink-500">Up to {a.max_occupancy} guests · {t?.amenities.join(' · ')}</div>
-                    <div className={`mt-2 text-xs font-semibold ${a.available ? 'text-brand-700' : 'text-red-600'}`}>{a.available ? (a.available < 3 ? `Only ${a.available} left` : 'Available') : 'Sold out'}</div>
+                    <div className={`mt-2 text-xs font-semibold ${a.available ? 'text-brand-700' : 'text-red-600'}`}>{a.available ? (a.available < 3 ? `Only ${a.available} left` : 'Available') : a.closed_reason || 'Sold out'}</div>
                   </button>
                 );
               })}
             </div>
             {sel && (
               <form onSubmit={submit} className="card grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-                <h2 className="sm:col-span-2">Your details — {sel.name}, {n} night(s), est. {rupees0(sel.base_rate_paise * n * form.rooms)} + GST</h2>
+                <h2 className="sm:col-span-2">Your details — {sel.name}, {n} night(s), est. {rupees0((sel.stay_total_paise ?? sel.base_rate_paise * n) * (Number(form.rooms) || 1))} + GST</h2>
                 <label><span className="label">Full name</span><input className="input" required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
                 <label><span className="label">Mobile number</span><input className="input" required type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
                 <label><span className="label">Email (optional)</span><input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>

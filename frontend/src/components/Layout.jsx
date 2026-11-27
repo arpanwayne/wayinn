@@ -7,6 +7,7 @@ const NAV = [
   ['/calendar', 'Calendar', ['bookings.view'], '▦'],
   ['/bookings', 'Bookings', ['bookings.view'], '☰'],
   ['/rooms', 'Rooms', ['bookings.view', 'rooms.status'], '▢'],
+  ['/rates', 'Rates', ['rates.manage', 'bookings.view'], '◈'],
   ['/guests', 'Guests', ['guests.view'], '☺'],
   ['/billing', 'Billing', ['folio.view'], '₹'],
   ['/pos', 'Restaurant POS', ['pos.order'], '◉'],

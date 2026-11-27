@@ -56,6 +56,8 @@ before(async () => {
   for (const who of ['owner', 'frontdesk']) tok[who] = await login(`${who}@demo-hotel.in`);
   platformTok = (await call('POST', '/api/platform/auth/login', { email: 'admin@wayinn.app', password: 'Wayinn@123' })).data.token;
   settingsBefore = (await hotel()).settings;
+  // Start without the add-on, whatever an earlier demo left behind.
+  await pool.query(`UPDATE hotels SET settings = settings - 'addons' WHERE id = 1`);
   await pool.query(`UPDATE stays SET status = 'cancelled' WHERE hotel_id = 1 AND status IN ('reserved','checked_in','tentative')`);
   await pool.query(`UPDATE orders SET status = 'cancelled' WHERE hotel_id = 1 AND status <> 'cancelled'`);
   await pool.query(`UPDATE rooms SET hk_status = 'ready' WHERE hotel_id = 1`);
